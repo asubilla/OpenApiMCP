@@ -1,0 +1,92 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Demo API", "version": "1.0.0" },
+  "servers": [{ "url": "https://petstore3.swagger.io/api/v3" }],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+    }
+  },
+  "paths": {
+    "/pet/{petId}": {
+      "get": {
+        "operationId": "getPetById",
+        "summary": "Find pet by ID",
+        "tags": ["pet"],
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "description": "ID of pet to return",
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": { "200": { "description": "successful operation" } }
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "summary": "Deletes a pet",
+        "tags": ["pet"],
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "description": "Pet id to delete",
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": { "200": { "description": "successful operation" } }
+      }
+    },
+    "/pet/findByStatus": {
+      "get": {
+        "operationId": "findPetsByStatus",
+        "summary": "Finds pets by status",
+        "tags": ["pet"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Status values to filter by",
+            "schema": { "type": "string", "enum": ["available", "pending", "sold"], "default": "available" }
+          }
+        ],
+        "responses": { "200": { "description": "successful operation" } }
+      }
+    },
+    "/store/inventory": {
+      "get": {
+        "operationId": "getInventory",
+        "summary": "Returns pet inventories by status",
+        "tags": ["store"],
+        "responses": { "200": { "description": "successful operation" } }
+      }
+    },
+    "/pet": {
+      "post": {
+        "operationId": "addPet",
+        "summary": "Add a new pet to the store",
+        "tags": ["pet"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "description": "Pet name" },
+                  "status": { "type": "string", "enum": ["available", "pending", "sold"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "successful operation" } }
+      }
+    }
+  }
+}

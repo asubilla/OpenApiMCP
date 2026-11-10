@@ -1,0 +1,56 @@
+{
+  "name": "openapimcp",
+  "version": "0.3.0",
+  "description": "Turn any OpenAPI/Swagger spec into an MCP server with one command.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "openapimcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test:unit": "node --import tsx --test test/schema.test.ts test/filter.test.ts test/auth.test.ts test/http.test.ts test/cli.test.ts",
+    "test:e2e": "node test/smoke.mjs",
+    "test": "npm run build && npm run test:unit && npm run test:e2e",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "openapi",
+    "swagger",
+    "ai",
+    "agents",
+    "llm",
+    "cli",
+    "codegen"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "commander": "^15.1.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0"
+  }
+}
