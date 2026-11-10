@@ -7,6 +7,7 @@ import {
   localhostOriginValidation,
   originValidation
 } from "@modelcontextprotocol/node";
+import { healthPayload, type Metrics } from "./metrics.js";
 
 export interface GatewayOptions {
   port: number;
@@ -19,6 +20,8 @@ export interface GatewayOptions {
   allowedOrigins?: string[];
   /** Factory that returns a fresh server per request (stateless gateway). */
   createServer: () => McpServer;
+  /** Metrics registry exposed at GET /metrics. */
+  metrics?: Metrics;
   /** Called after the server is listening. */
   onListening?: (url: string) => void;
 }
@@ -42,6 +45,17 @@ export function startGateway(options: GatewayOptions): Promise<Server> {
 
   const handler = async (req: any, res: any) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (req.method === "GET" && url.pathname === "/healthz") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(healthPayload()));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/metrics" && options.metrics) {
+      res.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
+      res.end(options.metrics.render());
+      return;
+    }
     if (url.pathname !== options.path) {
       res.writeHead(404, { "content-type": "text/plain" });
       res.end(`Not found. The MCP endpoint is ${options.path}\n`);

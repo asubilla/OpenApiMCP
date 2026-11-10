@@ -14,6 +14,7 @@ import { createLogger } from "./logger.js";
 import { createAuditLog } from "./audit.js";
 import { RateLimiter, CircuitBreaker } from "./ratelimit.js";
 import { DiskCache } from "./cache.js";
+import { Metrics } from "./metrics.js";
 import { diffSpecs } from "./diff.js";
 import { applyOverlay } from "./overlay.js";
 import { postmanToOperations } from "./postman.js";
@@ -177,6 +178,8 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   const tools = applyFilters(api.tools, options, policy);
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
 
+  const metrics = options.http ? new Metrics() : undefined;
+  if (metrics) options.metrics = metrics;
   const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
   const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
@@ -202,6 +205,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
       allowedHosts: options.allowedHost,
       allowedOrigins: options.allowedOrigin,
       createServer,
+      metrics,
       onListening: (url) => log.info("gateway listening", { url, tools: tools.length })
     });
     return;
@@ -399,7 +403,8 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     rateLimiter: options.rateLimit ? new RateLimiter({ ratePerSecond: Number(options.rateLimit) }) : undefined,
     breaker: options.breaker ? new CircuitBreaker() : undefined,
     diskCache: options.cacheDir ? new DiskCache(options.cacheDir) : undefined,
-    audit: options.audit ? createAuditLog(options.audit) : undefined
+    audit: options.audit ? createAuditLog(options.audit) : undefined,
+    metrics: options.metrics
   };
 }
 

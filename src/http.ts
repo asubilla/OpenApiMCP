@@ -7,6 +7,7 @@ import { summarizeJson, type SummarizeOptions } from "./summarize.js";
 import { cacheKey, type DiskCache } from "./cache.js";
 import type { RateLimiter, CircuitBreaker } from "./ratelimit.js";
 import type { AuditLog } from "./audit.js";
+import type { Metrics } from "./metrics.js";
 
 export interface RequestOptions {
   /** Base URL override. When omitted, each tool uses its own spec's base URL. */
@@ -42,6 +43,8 @@ export interface RequestOptions {
   breaker?: CircuitBreaker;
   /** Audit log sink. */
   audit?: AuditLog;
+  /** Prometheus metrics sink. */
+  metrics?: Metrics;
 }
 
 export interface ApiResult {
@@ -102,16 +105,11 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   const url = `${base}${path}${qs ? `?${qs}` : ""}`;
 
   const finish = (result: ApiResult, status?: number, reason?: string): ApiResult => {
-    opts.audit?.write({
-      time: new Date().toISOString(),
-      tool: tool.name,
-      method,
-      url,
-      status,
-      ok: !result.isError,
-      durationMs: Date.now() - started,
-      reason
-    });
+    const durationMs = Date.now() - started;
+    const ok = !result.isError;
+    opts.metrics?.counter("openapimcp_tool_calls_total", { tool: tool.name, method, ok: String(ok) });
+    opts.metrics?.observe("openapimcp_tool_duration_ms", durationMs, { tool: tool.name, method });
+    opts.audit?.write({ time: new Date().toISOString(), tool: tool.name, method, url, status, ok, durationMs, reason });
     return result;
   };
 
