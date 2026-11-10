@@ -1,0 +1,6 @@
+{
+  "allow": ["get*", "find*"],
+  "deny": ["delete*"],
+  "methods": ["GET", "POST"],
+  "hosts": ["petstore3.swagger.io", "*.example.com"]
+}

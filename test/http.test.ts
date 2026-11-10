@@ -103,3 +103,9 @@ test("respects maxPages", async () => {
   assert.match(result.text, /"page": 2/);
   assert.doesNotMatch(result.text, /"page": 3/);
 });
+
+test("policy blocks an outbound host that is not allowed", async () => {
+  const result = await callApi(tool({ path: "/cache" }), {}, opts({ policy: { hosts: ["example.com"] } }));
+  assert.equal(result.isError, true);
+  assert.match(result.text, /Blocked by policy/);
+});

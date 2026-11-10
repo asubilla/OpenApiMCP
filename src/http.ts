@@ -1,5 +1,7 @@
 import type { ToolDef } from "./types.js";
 import { filterFields } from "./filter.js";
+import { checkRequest, type Policy } from "./policy.js";
+import { recordToolCall } from "./telemetry.js";
 
 export interface RequestOptions {
   /** Base URL override. When omitted, each tool uses its own spec's base URL. */
@@ -21,6 +23,8 @@ export interface RequestOptions {
   paginate?: boolean;
   /** Maximum pages to fetch when paginating. Default 5. */
   maxPages?: number;
+  /** Policy enforced at call time (method + outbound host allowlists). */
+  policy?: Policy;
 }
 
 export interface ApiResult {
@@ -42,7 +46,11 @@ export function clearCache(): void {
   cache.clear();
 }
 
-export async function callApi(tool: ToolDef, args: Record<string, any>, opts: RequestOptions): Promise<ApiResult> {
+export function callApi(tool: ToolDef, args: Record<string, any>, opts: RequestOptions): Promise<ApiResult> {
+  return recordToolCall(tool.name, tool.method.toUpperCase(), () => callApiInner(tool, args, opts));
+}
+
+async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: RequestOptions): Promise<ApiResult> {
   const base = (opts.baseUrl || tool.baseUrl || "").replace(/\/+$/, "");
   const method = tool.method.toUpperCase();
   const isSafe = method === "GET" || method === "HEAD";
@@ -74,6 +82,12 @@ export async function callApi(tool: ToolDef, args: Record<string, any>, opts: Re
 
   const qs = query.toString();
   const url = `${base}${path}${qs ? `?${qs}` : ""}`;
+
+  if (opts.policy) {
+    const reason = checkRequest(opts.policy, tool, url);
+    if (reason) return { text: `Blocked by policy: ${reason}`, isError: true };
+  }
+
   if (hasBody) headers["content-type"] = headers["content-type"] ?? "application/json";
   const payload = hasBody ? JSON.stringify(tool.bodyObject ? body : bodyValue) : undefined;
   const cacheKey = `${method} ${url} ${payload ?? ""}`;

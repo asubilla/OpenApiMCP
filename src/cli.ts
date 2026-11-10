@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -7,9 +8,11 @@ import { buildServer } from "./server.js";
 import { callApi, type RequestOptions } from "./http.js";
 import { substituteEnv } from "./auth.js";
 import { generateProject } from "./generate.js";
+import { startGateway } from "./gateway.js";
+import { loadPolicy, toolAllowed, type Policy } from "./policy.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "0.3.0";
+const VERSION = "1.0.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -17,6 +20,7 @@ interface FilterOptions {
   exclude?: string;
   tag?: string[];
   readOnly?: boolean;
+  policy?: string;
 }
 
 const program = new Command();
@@ -27,7 +31,8 @@ const filterFlags = (cmd: Command) =>
     .option("--include <regex>", "Only include tools whose name matches this regex")
     .option("--exclude <regex>", "Exclude tools whose name matches this regex")
     .option("--tag <tag...>", "Only include operations with these tags")
-    .option("--read-only", "Expose only read operations (GET/HEAD/OPTIONS)");
+    .option("--read-only", "Expose only read operations (GET/HEAD/OPTIONS)")
+    .option("--policy <file>", "JSON policy file (allow/deny tools, methods, outbound hosts)");
 
 const httpFlags = (cmd: Command) =>
   cmd
@@ -46,6 +51,12 @@ httpFlags(filterFlags(program.command("serve")))
   .argument("[specs...]", "Paths or URLs to OpenAPI/Swagger documents")
   .option("--name <name>", "MCP server name (default: slug of the spec title)")
   .option("--print-config", "Print an MCP client config snippet, then exit")
+  .option("--http", "Serve over Streamable HTTP instead of stdio")
+  .option("--port <n>", "HTTP port", "3000")
+  .option("--host <addr>", "HTTP bind address", "127.0.0.1")
+  .option("--path <path>", "HTTP endpoint path", "/mcp")
+  .option("--allowed-host <host...>", "Allowed Host headers for the HTTP gateway")
+  .option("--allowed-origin <origin...>", "Allowed Origin headers for the HTTP gateway")
   .action(serveAction);
 
 filterFlags(program.command("list"))
@@ -80,12 +91,13 @@ httpFlags(filterFlags(program.command("generate")))
 
 async function serveAction(specs: string[], options: any): Promise<void> {
   if (!specs?.length) program.help({ error: true });
+  const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs);
-  const tools = applyFilters(api.tools, options);
+  const tools = applyFilters(api.tools, options, policy);
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
 
   const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
-  const requestOpts = requestOptions(api, options);
+  const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
 
   if (options.printConfig) {
@@ -98,14 +110,30 @@ async function serveAction(specs: string[], options: any): Promise<void> {
     return;
   }
 
+  const createServer = () => buildServer({ ...api, tools }, { serverName, version: VERSION, ...requestOpts });
+
+  if (options.http) {
+    await startGateway({
+      port: Number(options.port) || 3000,
+      host: options.host ?? "127.0.0.1",
+      path: options.path ?? "/mcp",
+      allowedHosts: options.allowedHost,
+      allowedOrigins: options.allowedOrigin,
+      createServer,
+      onListening: (url) => process.stderr.write(`openapimcp: gateway listening on ${url} (${tools.length} tools)\n`)
+    });
+    return;
+  }
+
   process.stderr.write(`openapimcp: ${tools.length} tool(s) from "${api.title}" -> ${baseUrl || "(relative URL)"}\n`);
-  await serveStdio(() => buildServer({ ...api, tools }, { serverName, version: VERSION, ...requestOpts }));
+  await serveStdio(createServer);
 }
 
 async function listAction(specs: string[], options: FilterOptions & { json?: boolean }): Promise<void> {
   if (!specs?.length) program.help({ error: true });
+  const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs);
-  const tools = applyFilters(api.tools, options);
+  const tools = applyFilters(api.tools, options, policy);
   if (options.json) {
     const payload = tools.map((t) => ({ name: t.name, description: t.description, method: t.method, path: t.path, tags: t.tags }));
     process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
@@ -157,13 +185,14 @@ async function callAction(spec: string | undefined, toolName: string | undefined
     fatal(`--args is not valid JSON: ${options.args}`);
   }
 
-  const result = await callApi(tool!, args!, requestOptions(api, options));
+  const result = await callApi(tool!, args!, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
 }
 
 async function generateAction(specs: string[], options: any): Promise<void> {
   if (!specs?.length) program.help({ error: true });
+  const policy = loadPolicyOption(options.policy);
   const out = path.resolve(options.out ?? "./generated");
   const specInputs: { file: string; doc: any }[] = [];
   let defaultName = "openapimcp";
@@ -172,7 +201,7 @@ async function generateAction(specs: string[], options: any): Promise<void> {
     const doc = await loadDocument(spec);
     const api = parseDocument(doc);
     if (specs.length === 1) defaultName = slug(api.title);
-    const tools = applyFilters(api.tools, options);
+    const tools = applyFilters(api.tools, options, policy);
     const allowed = new Set(tools.map((t) => `${t.method.toUpperCase()} ${t.path}`));
     const file = specs.length === 1 ? "spec.json" : `specs/${slug(api.title)}.json`;
     specInputs.push({ file, doc: pruneDocument(doc, allowed) });
@@ -213,7 +242,7 @@ function pruneDocument(doc: any, allowed: Set<string>): any {
   return clone;
 }
 
-function requestOptions(api: ParsedApi, options: any): RequestOptions {
+function requestOptions(api: ParsedApi, options: any, policy?: Policy): RequestOptions {
   return {
     baseUrl: options.baseUrl,
     headers: parseHeaders(options.header),
@@ -223,11 +252,12 @@ function requestOptions(api: ParsedApi, options: any): RequestOptions {
     retries: Number(options.retries) || 0,
     cacheTtlMs: (Number(options.cacheTtl) || 0) * 1000,
     paginate: Boolean(options.paginate),
-    maxPages: Number(options.maxPages) || 5
+    maxPages: Number(options.maxPages) || 5,
+    policy
   };
 }
 
-function applyFilters(tools: ToolDef[], options: FilterOptions): ToolDef[] {
+function applyFilters(tools: ToolDef[], options: FilterOptions, policy?: Policy): ToolDef[] {
   const include = options.include ? new RegExp(options.include) : undefined;
   const exclude = options.exclude ? new RegExp(options.exclude) : undefined;
   const tags = options.tag && options.tag.length ? new Set(options.tag) : undefined;
@@ -237,6 +267,7 @@ function applyFilters(tools: ToolDef[], options: FilterOptions): ToolDef[] {
     if (exclude && exclude.test(tool.name)) return false;
     if (tags && !tool.tags.some((tag) => tags.has(tag))) return false;
     if (options.readOnly && !readOnlyMethods.has(tool.method.toLowerCase())) return false;
+    if (policy && !toolAllowed(policy, tool)) return false;
     return true;
   });
 }
@@ -276,6 +307,15 @@ async function loadApis(specs: string[]): Promise<ParsedApi> {
     schemesWithCreds: [...new Set(apis.flatMap((a) => a.schemesWithCreds))],
     schemesWithoutCreds: [...new Set(apis.flatMap((a) => a.schemesWithoutCreds))]
   };
+}
+
+function loadPolicyOption(file?: string): Policy | undefined {
+  if (!file) return undefined;
+  try {
+    return loadPolicy(JSON.parse(readFileSync(file, "utf8")));
+  } catch (err) {
+    return fatal(`could not load policy "${file}": ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 function parseHeaders(list: string[] | undefined): Record<string, string> {

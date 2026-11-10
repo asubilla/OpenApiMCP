@@ -1,0 +1,19 @@
+services:
+  openapimcp:
+    build: .
+    image: openapimcp
+    ports:
+      - "3000:3000"
+    # Point this at any spec (URL or a file mounted into the container).
+    command:
+      - https://petstore3.swagger.io/api/v3/openapi.json
+      - --http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --read-only
+      - --policy
+      - /app/policy.json
+    volumes:
+      - ./examples/policy.json:/app/policy.json:ro
