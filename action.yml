@@ -1,0 +1,31 @@
+name: openapimcp
+description: Turn an OpenAPI/Swagger spec into an MCP server, or lint/diff specs in CI
+branding:
+  icon: zap
+  color: purple
+
+inputs:
+  spec:
+    description: Path or URL to an OpenAPI/Swagger document
+    required: true
+  command:
+    description: "One of: doctor | list | diff | generate | serve"
+    required: false
+    default: doctor
+  args:
+    description: Extra arguments passed to openapimcp
+    required: false
+    default: ""
+  version:
+    description: openapimcp version to run (npm dist-tag or semver)
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+    - shell: bash
+      run: npx -y "openapimcp@${{ inputs.version }}" "${{ inputs.command }}" "${{ inputs.spec }}" ${{ inputs.args }}

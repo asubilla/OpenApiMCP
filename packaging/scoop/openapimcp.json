@@ -1,0 +1,27 @@
+{
+  "version": "1.1.0",
+  "description": "Turn any OpenAPI/Swagger spec into an MCP server",
+  "homepage": "https://github.com/asubilla/OpenApiMCP",
+  "license": "MIT",
+  "depends": "nodejs",
+  "url": "https://registry.npmjs.org/openapimcp/-/openapimcp-1.1.0.tgz",
+  "hash": "REPLACE_WITH_TARBALL_SHA256",
+  "installer": {
+    "script": [
+      "npm install -g --prefix \"$dir\" \"$dir\\package.tgz\""
+    ]
+  },
+  "uninstaller": {
+    "script": [
+      "npm uninstall -g --prefix \"$dir\" openapimcp"
+    ]
+  },
+  "bin": "openapimcp.cmd",
+  "checkver": {
+    "url": "https://registry.npmjs.org/openapimcp",
+    "jsonpath": "$['dist-tags'].latest"
+  },
+  "autoupdate": {
+    "url": "https://registry.npmjs.org/openapimcp/-/openapimcp-$version.tgz"
+  }
+}

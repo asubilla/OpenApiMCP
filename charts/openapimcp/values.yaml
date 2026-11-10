@@ -1,0 +1,33 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/asubilla/openapimcp
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# The OpenAPI spec to serve.
+spec: "https://petstore3.swagger.io/api/v3/openapi.json"
+
+# Extra CLI arguments (e.g. --read-only, --policy, --tool-search).
+args:
+  - --read-only
+
+# Environment variables (e.g. credentials referenced by OPENAPIMCP_*).
+env: []
+#  - name: OPENAPIMCP_APIKEYAUTH
+#    valueFrom:
+#      secretKeyRef:
+#        name: openapimcp
+#        key: api-key
+
+service:
+  type: ClusterIP
+  port: 3000
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

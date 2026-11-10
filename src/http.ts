@@ -2,6 +2,11 @@ import type { ToolDef } from "./types.js";
 import { filterFields } from "./filter.js";
 import { checkRequest, type Policy } from "./policy.js";
 import { recordToolCall } from "./telemetry.js";
+import { redact } from "./redact.js";
+import { summarizeJson, type SummarizeOptions } from "./summarize.js";
+import { cacheKey, type DiskCache } from "./cache.js";
+import type { RateLimiter, CircuitBreaker } from "./ratelimit.js";
+import type { AuditLog } from "./audit.js";
 
 export interface RequestOptions {
   /** Base URL override. When omitted, each tool uses its own spec's base URL. */
@@ -17,14 +22,26 @@ export interface RequestOptions {
   retries?: number;
   /** Base backoff delay in milliseconds. Default 300. */
   retryDelayMs?: number;
-  /** Cache GET/HEAD responses for this many milliseconds. Default 0 (off). */
+  /** Cache GET/HEAD responses for this many milliseconds (in-memory). Default 0 (off). */
   cacheTtlMs?: number;
+  /** Optional persistent cache used instead of (and before) the in-memory cache. */
+  diskCache?: DiskCache;
   /** Follow pagination links and merge pages. Default false. */
   paginate?: boolean;
   /** Maximum pages to fetch when paginating. Default 5. */
   maxPages?: number;
   /** Policy enforced at call time (method + outbound host allowlists). */
   policy?: Policy;
+  /** Redact secrets/PII from responses. */
+  redact?: boolean;
+  /** Summarize large responses (array/depth/string/keys caps). */
+  summarize?: SummarizeOptions;
+  /** Client-side rate limiter (token bucket). */
+  rateLimiter?: RateLimiter;
+  /** Circuit breaker for the upstream API. */
+  breaker?: CircuitBreaker;
+  /** Audit log sink. */
+  audit?: AuditLog;
 }
 
 export interface ApiResult {
@@ -51,6 +68,7 @@ export function callApi(tool: ToolDef, args: Record<string, any>, opts: RequestO
 }
 
 async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: RequestOptions): Promise<ApiResult> {
+  const started = Date.now();
   const base = (opts.baseUrl || tool.baseUrl || "").replace(/\/+$/, "");
   const method = tool.method.toUpperCase();
   const isSafe = method === "GET" || method === "HEAD";
@@ -83,14 +101,30 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   const qs = query.toString();
   const url = `${base}${path}${qs ? `?${qs}` : ""}`;
 
+  const finish = (result: ApiResult, status?: number, reason?: string): ApiResult => {
+    opts.audit?.write({
+      time: new Date().toISOString(),
+      tool: tool.name,
+      method,
+      url,
+      status,
+      ok: !result.isError,
+      durationMs: Date.now() - started,
+      reason
+    });
+    return result;
+  };
+
   if (opts.policy) {
     const reason = checkRequest(opts.policy, tool, url);
-    if (reason) return { text: `Blocked by policy: ${reason}`, isError: true };
+    if (reason) return finish({ text: `Blocked by policy: ${reason}`, isError: true }, undefined, reason);
   }
 
   if (hasBody) headers["content-type"] = headers["content-type"] ?? "application/json";
   const payload = hasBody ? JSON.stringify(tool.bodyObject ? body : bodyValue) : undefined;
-  const cacheKey = `${method} ${url} ${payload ?? ""}`;
+  const memKey = `${method} ${url} ${payload ?? ""}`;
+  const diskKey = cacheKey(method, url, payload);
+  const useCache = isSafe && (opts.cacheTtlMs ?? 0) > 0;
 
   const maxPages = opts.paginate ? Math.max(1, opts.maxPages ?? 5) : 1;
   const bodies: string[] = [];
@@ -100,24 +134,43 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   let lastStatusText = "";
 
   for (let page = 0; page < maxPages; page++) {
-    const canCache = isSafe && (opts.cacheTtlMs ?? 0) > 0 && page === 0;
-    const hit = canCache ? cache.get(cacheKey) : undefined;
-
+    const canCache = useCache && page === 0;
     let raw: string;
     let link: string | null;
-    if (hit && hit.expires > Date.now()) {
-      raw = hit.raw;
-      lastStatus = hit.status;
-      lastStatusText = hit.statusText;
-      link = hit.link;
+
+    const memHit = canCache ? cache.get(memKey) : undefined;
+    const diskHit = canCache && !memHit && opts.diskCache ? opts.diskCache.get(diskKey) : undefined;
+
+    if (memHit && memHit.expires > Date.now()) {
+      raw = memHit.raw;
+      lastStatus = memHit.status;
+      lastStatusText = memHit.statusText;
+      link = memHit.link;
+    } else if (diskHit) {
+      const entry = JSON.parse(diskHit.value) as CacheEntry;
+      raw = entry.raw;
+      lastStatus = entry.status;
+      lastStatusText = entry.statusText;
+      link = entry.link;
     } else {
+      if (opts.breaker && !opts.breaker.canRequest()) {
+        return finish({ text: "Blocked by circuit breaker: upstream marked unhealthy", isError: true }, undefined, "circuit-open");
+      }
+      if (opts.rateLimiter) await opts.rateLimiter.acquire();
+
       const res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, opts);
       raw = await res.text();
       lastStatus = res.status;
       lastStatusText = res.statusText;
       link = res.headers.get("link");
+
+      if (res.status >= 500 || res.status === 429) opts.breaker?.onFailure();
+      else opts.breaker?.onSuccess();
+
       if (canCache && res.ok) {
-        cache.set(cacheKey, { expires: Date.now() + (opts.cacheTtlMs ?? 0), raw, status: res.status, statusText: res.statusText, link });
+        const entry: CacheEntry = { expires: Date.now() + (opts.cacheTtlMs ?? 0), raw, status: res.status, statusText: res.statusText, link };
+        cache.set(memKey, entry);
+        opts.diskCache?.set(diskKey, JSON.stringify(entry), opts.cacheTtlMs ?? 0);
       }
     }
 
@@ -143,12 +196,24 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   } else {
     rendered = renderBody(bodies[0] ?? "", opts.fields);
   }
+
+  if (opts.summarize || opts.redact) {
+    try {
+      let data: any = JSON.parse(rendered);
+      if (opts.summarize) data = summarizeJson(data, opts.summarize);
+      if (opts.redact) data = redact(data);
+      rendered = JSON.stringify(data, null, 2);
+    } catch {
+      /* non-JSON body: leave as-is */
+    }
+  }
+
   rendered = truncate(rendered, opts.maxBytes);
 
   const pageNote = bodies.length > 1 ? `  (${bodies.length} pages)` : "";
   const text = [`${method} ${url}`, `HTTP ${lastStatus} ${lastStatusText}`.trimEnd() + pageNote, "", rendered].join("\n");
 
-  return { text, isError: lastStatus >= 400 };
+  return finish({ text, isError: lastStatus >= 400 }, lastStatus);
 }
 
 async function fetchWithRetry(

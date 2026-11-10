@@ -8,8 +8,6 @@ Point it at an API spec and instantly get an [MCP](https://modelcontextprotocol.
 npx openapimcp https://petstore3.swagger.io/api/v3/openapi.json
 ```
 
-That's it. Your agent now has hands on that API.
-
 ---
 
 ## "Why not just ask an AI to write it?"
@@ -21,24 +19,20 @@ Fair question. An LLM *can* generate an MCP server, or just `curl` the API ad-ho
 | Code you must **maintain**; breaks when the spec changes | Nothing to maintain — re-run and it's in sync |
 | LLMs **hallucinate** endpoints, params, and encodings | Built **deterministically** from the spec |
 | Burns tokens **every session** re-figuring out the API | Configured once; available to every session, agent, and teammate |
-| Chokes on **large specs** (1000+ endpoints) | Handles any size; filter with `--tag` / `--read-only` |
-| Dumps a 2 MB JSON blob into your context | `--fields` trims responses; `--max-bytes` caps them |
-| No auth, retries, caching, pagination, policy, or telemetry | All built in |
-
-Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
+| Chokes on **large specs** (1000+ endpoints) | `--tool-search` progressive disclosure + `--tag`/`--read-only` |
+| Dumps a 2 MB JSON blob into your context | `--fields`, `--summarize`, `--max-bytes`, `--redact` |
 
 ## Highlights
 
 - 🔌 **Zero code** — runtime-generated tools, nothing to maintain
-- 🔐 **Auto auth** — resolves `securitySchemes` from environment variables
-- 🪶 **Context-friendly** — field allowlists and byte caps keep responses small
-- ♻️ **Resilient** — retries with backoff, response caching, pagination
-- 🧩 **Multi-spec** — combine several APIs into one server, namespaced
+- 🔐 **Auto auth** — resolves `securitySchemes` from env vars; policy engine for tools/methods/hosts
+- 🪶 **Context-friendly** — field allowlists, response summarization, redaction
+- ♻️ **Resilient** — retries, caching (memory + disk), pagination, rate limiting, circuit breaker
+- 🔎 **Progressive tool search** — `search_tools` + `call_tool` for huge APIs
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams
-- 🛡️ **Policy engine** — allow/deny tools by name, restrict methods and outbound hosts
-- 📈 **OpenTelemetry** — spans and metrics on every tool call (opt-in)
-- 📦 **`generate`** — emit a standalone, offline project
-- 🐳 **Docker** — ship a gateway in one image
+- 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
+- 📦 **Extras** — `generate`, TS client generation, spec diff, smoke tests, Postman import, shell completions, TUI
+- 🐳 **Docker + Helm** — ship a gateway in one image or chart
 
 ## Install
 
@@ -52,11 +46,12 @@ Requires **Node.js 20+**.
 ## Quickstart
 
 ```bash
-openapimcp list ./openapi.json         # see the tools
-openapimcp doctor ./openapi.json       # validate spec, auth, connectivity
+openapimcp ui ./openapi.json                     # browse tools in the terminal
+openapimcp list ./openapi.json                   # list tools
+openapimcp doctor ./openapi.json                 # validate spec, auth, connectivity
 openapimcp call ./openapi.json findPetsByStatus --args '{"status":"available"}'
-openapimcp ./openapi.json              # run as a stdio MCP server
-openapimcp ./openapi.json --http       # ...or as an HTTP gateway
+openapimcp ./openapi.json                        # run as a stdio MCP server
+openapimcp ./openapi.json --http                 # ...or as an HTTP gateway
 ```
 
 ## Provider setup
@@ -68,10 +63,7 @@ openapimcp ./openapi.json --http       # ...or as an HTTP gateway
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "servers": {
-      "demo": {
-        "type": "local",
-        "command": ["npx", "-y", "openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"]
-      }
+      "demo": { "type": "local", "command": ["npx", "-y", "openapimcp", "./openapi.json"] }
     }
   }
 }
@@ -80,22 +72,7 @@ openapimcp ./openapi.json --http       # ...or as an HTTP gateway
 **Claude Desktop / Cursor** (`mcpServers`):
 
 ```json
-{
-  "mcpServers": {
-    "demo": {
-      "command": "npx",
-      "args": ["-y", "openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"]
-    }
-  }
-}
-```
-
-**Remote HTTP gateway** (point any client at the URL):
-
-```json
-{
-  "mcpServers": { "demo": { "url": "http://127.0.0.1:3000/mcp" } }
-}
+{ "mcpServers": { "demo": { "command": "npx", "args": ["-y", "openapimcp", "./openapi.json"] } } }
 ```
 
 ## Commands
@@ -103,39 +80,39 @@ openapimcp ./openapi.json --http       # ...or as an HTTP gateway
 ```
 openapimcp [specs...] [options]      # same as `serve` (default command)
 openapimcp serve [specs...]          # stdio server, or --http gateway
-openapimcp list [specs...]           # list tools (--json for machine output)
-openapimcp doctor [specs...]         # validate specs, auth, and connectivity
+openapimcp list [specs...]           # list tools (--json)
+openapimcp doctor [specs...]         # validate specs, auth, connectivity
 openapimcp call [spec] <tool>        # call one tool from the terminal
+openapimcp ui <spec> [--tool NAME]   # browse tools in the terminal
+openapimcp diff <old> <new>          # breaking / non-breaking changes
 openapimcp generate <specs...> -o .  # emit a standalone project
+openapimcp client <spec> -o ./client # generate a typed TypeScript client
+openapimcp smoke <spec> [--out f]    # generate a node:test smoke suite
+openapimcp postman <collection>      # list operations in a Postman collection
+openapimcp completions [shell]       # bash | zsh | fish | powershell
 ```
 
-Options for `serve`/`call`: `--base-url`, `-H/--header`, `--include`, `--exclude`, `--tag`, `--read-only`, `--policy`, `--fields`, `--max-bytes`, `--timeout`, `--retries`, `--cache-ttl`, `--paginate`, `--max-pages`, `--print-config`.
+### Common options
 
-Gateway options: `--http`, `--port`, `--host`, `--path`, `--allowed-host`, `--allowed-origin`.
+`--include` `--exclude` `--tag` `--read-only` `--policy` `--base-url` `-H/--header`
+`--fields` `--max-bytes` `--timeout` `--retries` `--cache-ttl` `--cache-dir`
+`--paginate` `--max-pages` `--rate-limit` `--breaker` `--redact` `--summarize`
+`--config` `--dotenv` `--overlay` `--audit` `--log-json` `--tool-search`
+`--print-config`
 
-## Auth from `securitySchemes`
+Gateway: `--http` `--port` `--host` `--path` `--allowed-host` `--allowed-origin`.
 
-`openapimcp` reads the spec's security schemes and looks for credentials in environment variables named `OPENAPIMCP_<SCHEME>`:
-
-| Scheme | Env var | Example |
-| --- | --- | --- |
-| `http` bearer | `OPENAPIMCP_<SCHEME>` (or `OPENAPIMCP_TOKEN`) | `Authorization: Bearer <value>` |
-| `http` basic | `OPENAPIMCP_<SCHEME>_USERNAME` + `_PASSWORD` | base64-encoded |
-| `apiKey` header / query / cookie | `OPENAPIMCP_<SCHEME>` | sent in the named slot |
-| `oauth2` / `openIdConnect` | `OPENAPIMCP_<SCHEME>` (or `OPENAPIMCP_TOKEN`) | `Authorization: Bearer <value>` |
-
-`{env:NAME}` is substituted anywhere you pass a value, e.g. `-H "Authorization: Bearer {env:MY_TOKEN}"`.
-
-## Keep responses small
+## Context economy
 
 ```bash
+# keep only the fields you need (dotted paths + arrays)
 openapimcp call ./openapi.json findPetsByStatus --fields "id,name,status"
-openapimcp ./openapi.json --max-bytes 4000
+
+# trim big payloads, redact secrets/PII, cap size
+openapimcp ./openapi.json --summarize --redact --max-bytes 4000
 ```
 
 ## Policy engine
-
-Lock a gateway down with a JSON policy:
 
 ```json
 {
@@ -150,100 +127,114 @@ Lock a gateway down with a JSON policy:
 openapimcp ./openapi.json --http --read-only --policy ./policy.json
 ```
 
-- `allow` / `deny` — tool-name globs (`deny` wins)
-- `methods` — HTTP method allowlist
-- `hosts` — outbound host allowlist (SSRF guard); checked again at call time
-
-## Remote HTTP gateway
-
-Serve Streamable HTTP instead of stdio, so a team can share one server:
+## Resilience & scale
 
 ```bash
-openapimcp ./openapi.json --http --port 3000 --path /mcp
-# gateway listening on http://127.0.0.1:3000/mcp (5 tools)
+openapimcp ./openapi.json \
+  --retries 3 --cache-ttl 60 --cache-dir .cache \
+  --paginate --max-pages 10 \
+  --rate-limit 10 --breaker \
+  --tool-search          # for large APIs: search_tools + call_tool
 ```
 
-The gateway is stateless and, when bound to localhost, validates the `Host` and
-`Origin` headers. To expose it, bind `--host 0.0.0.0` and pass explicit
-`--allowed-host` / `--allowed-origin` values.
-
-## Docker
+## Observability
 
 ```bash
-docker build -t openapimcp .
-docker run -p 3000:3000 openapimcp \
-  https://petstore3.swagger.io/api/v3/openapi.json \
-  --http --host 0.0.0.0 --read-only
+openapimcp ./openapi.json --http --log-json --audit ./audit.jsonl
 ```
 
-Or `docker compose up` (see `docker-compose.yml`).
+- Every tool call emits an OpenTelemetry span + `openapimcp.tool.*` metrics (no-op until you register a provider).
+- `--log-json` emits structured JSON logs; `--audit` appends a JSON-lines audit trail.
 
-## OpenTelemetry
+## Config file & .env
 
-Every tool call emits a span (`mcp.tool <name>`) plus `openapimcp.tool.calls`
-and `openapimcp.tool.duration` metrics through `@opentelemetry/api`. It is a
-no-op until you register a provider, so instrument freely:
+```json
+{
+  "base-url": "https://api.example.com",
+  "readOnly": true,
+  "cacheTtl": 60,
+  "rateLimit": 10,
+  "fields": ["id", "name"]
+}
+```
 
 ```bash
-npm i @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http
-NODE_OPTIONS="--import ./otel.mjs" openapimcp ./openapi.json --http
+openapimcp ./openapi.json --config openapimcp.config.json --dotenv .env
 ```
 
-## Combine several APIs
+CLI flags always override the config file. `--dotenv` loads `OPENAPIMCP_*` credentials.
+
+## OpenAPI Overlays
 
 ```bash
-openapimcp ./stripe.json ./github.json
-# -> stripe_createCharge, github_getRepo, ...
+openapimcp serve ./openapi.json --overlay ./overlay.json
 ```
 
-## Generate a standalone project
+## Spec diff (CI-friendly)
 
-Bundle the spec(s) into a publishable, offline MCP server:
+```bash
+openapimcp diff ./old.json ./new.json   # exits 1 when breaking changes are found
+```
+
+## Generate a standalone project / client
 
 ```bash
 openapimcp generate ./openapi.json --out ./my-mcp --read-only
 cd my-mcp && npm install && npm start
+
+openapimcp client ./openapi.json --out ./client   # typed TS fetch client
+openapimcp smoke ./openapi.json --out ./smoke.test.ts
 ```
 
-Output includes `spec.json`, `src/index.ts`, `openapimcp.config.json`, a `Dockerfile`, and a README.
+## Docker & Kubernetes
+
+```bash
+docker run -p 3000:3000 ghcr.io/asubilla/openapimcp \
+  https://petstore3.swagger.io/api/v3/openapi.json \
+  --http --host 0.0.0.0 --read-only
+
+helm install demo ./charts/openapimcp --set spec=https://example.com/openapi.json
+```
+
+## GitHub Action
+
+```yaml
+- uses: asubilla/OpenApiMCP@main
+  with:
+    spec: ./openapi.json
+    command: doctor
+```
 
 ## Use as a library
 
 ```ts
-import { parseSpec, buildServer, startGateway, serveStdio } from "openapimcp";
+import { parseSpec, buildServer, startGateway, rankTools, redact, summarizeJson } from "openapimcp";
 
 const api = await parseSpec("https://example.com/openapi.json");
-const createServer = () =>
-  buildServer(api, { serverName: "example", version: "1.0.0", headers: {}, timeoutMs: 30000, maxBytes: 20000, retries: 2 });
-
-// local:
-await serveStdio(createServer);
-// or hosted:
-await startGateway({ port: 3000, host: "127.0.0.1", path: "/mcp", createServer });
+await startGateway({ port: 3000, host: "127.0.0.1", path: "/mcp", createServer: () => buildServer(api, { headers: {}, timeoutMs: 30000, maxBytes: 20000, retries: 2 }) });
 ```
 
 ## How it works
 
 1. **Parse** — loads and `$ref`-dereferences the spec (OpenAPI 3.x or Swagger 2.0).
 2. **Flatten** — each `path` + `method` becomes a tool; params, JSON body, tags, auth, annotations, and base URL are derived from the spec.
-3. **Serve** — tools are registered on an MCP server over stdio or Streamable HTTP; calls run through the policy engine and telemetry, with retries, caching, and pagination.
-
-JSON Schema → Zod conversion is done in-house, so there are no heavyweight codegen dependencies.
+3. **Serve** — tools are registered on an MCP server over stdio or Streamable HTTP; calls run through the policy engine, rate limiter, circuit breaker, cache, telemetry and audit log.
 
 ## Roadmap
 
-- [x] Auth presets, `--read-only`, response filtering, annotations
-- [x] Retries, caching, pagination, multi-spec, `generate`
-- [x] Remote HTTP gateway, policy engine, OpenTelemetry, Docker
+- [x] Auth presets, filtering, annotations, retries, caching, pagination, multi-spec, `generate`
+- [x] HTTP gateway, policy engine, OpenTelemetry, Docker
+- [x] Redaction, summarization, tool search, rate limit, circuit breaker, disk cache
+- [x] Config file, `.env`, overlays, diff, TS client, smoke tests, Postman, completions, TUI, Helm, Action
 - [ ] OAuth2 client-credentials flow (auto token fetch + refresh)
 - [ ] `structuredContent` output schemas
-- [ ] Published Docker image + Helm chart
+- [ ] GraphQL / gRPC → MCP
 
 ## Contributing
 
 ```bash
 npm install
-npm test   # build + 39 unit tests + end-to-end MCP handshake
+npm test   # build + 225 unit tests + end-to-end MCP handshake
 ```
 
 ## License

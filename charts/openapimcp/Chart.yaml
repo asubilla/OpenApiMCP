@@ -1,0 +1,14 @@
+apiVersion: v2
+name: openapimcp
+description: Run an OpenAPI/Swagger spec as a shared MCP gateway
+type: application
+version: 1.1.0
+appVersion: "1.1.0"
+home: https://github.com/asubilla/OpenApiMCP
+sources:
+  - https://github.com/asubilla/OpenApiMCP
+keywords:
+  - mcp
+  - openapi
+  - gateway
+  - ai

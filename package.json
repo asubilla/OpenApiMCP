@@ -1,6 +1,6 @@
 {
   "name": "openapimcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Turn any OpenAPI/Swagger spec into an MCP server with one command.",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,7 +25,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
-    "test:unit": "node --import tsx --test test/schema.test.ts test/filter.test.ts test/auth.test.ts test/policy.test.ts test/http.test.ts test/gateway.test.ts test/cli.test.ts",
+    "test:unit": "node --import tsx --test test/schema.test.ts test/filter.test.ts test/auth.test.ts test/policy.test.ts test/http.test.ts test/gateway.test.ts test/logger.test.ts test/audit.test.ts test/metrics.test.ts test/redact.test.ts test/sanitize.test.ts test/summarize.test.ts test/toolsearch.test.ts test/output.test.ts test/validate.test.ts test/ratelimit.test.ts test/cache.test.ts test/mock.test.ts test/diff.test.ts test/overlay.test.ts test/postman.test.ts test/completions.test.ts test/config.test.ts test/env.test.ts test/clientgen.test.ts test/testing.test.ts test/cli.test.ts",
     "test:e2e": "node test/smoke.mjs",
     "test": "npm run build && npm run test:unit && npm run test:e2e",
     "prepublishOnly": "npm run build"
