@@ -8,7 +8,7 @@
 [![GitHub](https://img.shields.io/github/stars/asubilla/OpenApiMCP?style=social)](https://github.com/asubilla/OpenApiMCP)
 
 ```bash
-npx openapimcp https://petstore3.swagger.io/api/v3/openapi.json
+npx @asubilla/openapimcp https://petstore3.swagger.io/api/v3/openapi.json
 ```
 
 That's it. Your agent now has hands on that API.
@@ -20,9 +20,9 @@ That's it. Your agent now has hands on that API.
 If you are an AI agent reading this, here is the machine-usable summary:
 
 - **What:** `openapimcp` is a CLI + library that converts an OpenAPI 3.x / Swagger 2.0 spec into a fully working MCP server (stdio or Streamable HTTP).
-- **Install:** `npm install -g openapimcp` or `npx openapimcp <spec>`.
-- **One-shot:** `npx openapimcp <spec-url-or-file>` starts a stdio MCP server with one tool per operation.
-- **Auto-config:** `npx openapimcp setup <spec>` writes MCP entries into every detected client (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed) on Windows/macOS/Linux.
+- **Install:** `npm install -g @asubilla/openapimcp` or `npx @asubilla/openapimcp <spec>`.
+- **One-shot:** `npx @asubilla/openapimcp <spec-url-or-file>` starts a stdio MCP server with one tool per operation.
+- **Auto-config:** `npx @asubilla/openapimcp setup <spec>` writes MCP entries into every detected client (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed) on Windows/macOS/Linux.
 - **HTTP gateway:** `openapimcp <spec> --http --port 3000` exposes `POST /mcp` (Streamable HTTP, stateless) + a developer portal at `/`.
 - **Tool names:** `<operationId>` (sanitized). Multi-spec: `<slug>_<operationId>`.
 - **Auth:** env vars `OPENAPIMCP_<SCHEME>` (bearer/basic/apiKey/oauth2/openIdConnect); `{env:NAME}` substitution anywhere.
@@ -32,12 +32,12 @@ If you are an AI agent reading this, here is the machine-usable summary:
 
 ### Minimal agent config (OpenCode)
 ```json
-{ "mcp": { "servers": { "myapi": { "type": "local", "command": ["npx", "-y", "openapimcp", "https://example.com/openapi.json"] } } } }
+{ "mcp": { "servers": { "myapi": { "type": "local", "command": ["npx", "-y", "@asubilla/openapimcp", "https://example.com/openapi.json"] } } } }
 ```
 
 ### Minimal agent config (Claude Desktop / Cursor)
 ```json
-{ "mcpServers": { "myapi": { "command": "npx", "args": ["-y", "openapimcp", "https://example.com/openapi.json"] } } }
+{ "mcpServers": { "myapi": { "command": "npx", "args": ["-y", "@asubilla/openapimcp", "https://example.com/openapi.json"] } } }
 ```
 
 ---
@@ -78,7 +78,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   A[npm install openapimcp] --> B{setup?}
-  B -- "npx openapimcp setup <spec>" --> C[detect installed clients]
+  B -- "npx @asubilla/openapimcp setup <spec>" --> C[detect installed clients]
   C --> D[OpenCode]
   C --> E[Claude Desktop]
   C --> F[Cursor]
@@ -120,8 +120,8 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 ## Install
 
 ```bash
-npx openapimcp <spec>          # no install needed
-npm install -g openapimcp      # or globally
+npx @asubilla/openapimcp <spec>          # no install needed
+npm install -g @asubilla/openapimcp      # or globally
 ```
 
 Requires **Node.js 20+**.
@@ -160,7 +160,7 @@ On `npm install`, openapimcp prints a hint; set `OPENAPIMCP_AUTO_SETUP=1` to run
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "servers": {
-      "demo": { "type": "local", "command": ["npx", "-y", "openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"] }
+      "demo": { "type": "local", "command": ["npx", "-y", "@asubilla/openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"] }
     }
   }
 }
@@ -169,7 +169,7 @@ On `npm install`, openapimcp prints a hint; set `OPENAPIMCP_AUTO_SETUP=1` to run
 **Claude Desktop / Cursor** (`mcpServers`):
 
 ```json
-{ "mcpServers": { "demo": { "command": "npx", "args": ["-y", "openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"] } } }
+{ "mcpServers": { "demo": { "command": "npx", "args": ["-y", "@asubilla/openapimcp", "https://petstore3.swagger.io/api/v3/openapi.json"] } } }
 ```
 
 **Remote HTTP gateway** (point any client at the URL):

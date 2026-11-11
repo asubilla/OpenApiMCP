@@ -23,13 +23,13 @@ Continue, and Zed on Windows, macOS, and Linux.
 No global install needed:
 
 ```bash
-npx openapimcp <spec>
+npx @asubilla/openapimcp <spec>
 ```
 
 Or globally:
 
 ```bash
-npm install -g openapimcp
+npm install -g @asubilla/openapimcp
 ```
 
 Requires Node.js 20+.

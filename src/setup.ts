@@ -56,7 +56,7 @@ function writeJson(file: string, value: unknown): void {
 }
 
 function entryFor(spec: string, serverName: string): { command: string; args: string[] } {
-  return { command: "npx", args: ["-y", "openapimcp", spec] };
+  return { command: "npx", args: ["-y", "@asubilla/openapimcp", spec] };
 }
 
 function writeClient(client: ClientInfo, spec: string, serverName: string): { ok: boolean; error?: string } {
@@ -65,15 +65,15 @@ function writeClient(client: ClientInfo, spec: string, serverName: string): { ok
       const cfg = readJson(client.path) ?? { $schema: "https://opencode.ai/config.json", mcp: { servers: {} } };
       cfg.mcp ??= { servers: {} };
       cfg.mcp.servers ??= {};
-      if (client.scope === "global") cfg.mcp.servers[serverName] = { type: "local", command: ["npx", "-y", "openapimcp", spec] };
-      else cfg.mcp.servers[serverName] = { type: "local", command: ["npx", "-y", "openapimcp", spec] };
+      if (client.scope === "global") cfg.mcp.servers[serverName] = { type: "local", command: ["npx", "-y", "@asubilla/openapimcp", spec] };
+      else cfg.mcp.servers[serverName] = { type: "local", command: ["npx", "-y", "@asubilla/openapimcp", spec] };
       writeJson(client.path, cfg);
       return { ok: true };
     }
     if (client.id === "vscode" && client.scope === "project") {
       const cfg = readJson(client.path) ?? { servers: {} };
       cfg.servers ??= {};
-      cfg.servers[serverName] = { command: "npx", args: ["-y", "openapimcp", spec] };
+      cfg.servers[serverName] = { command: "npx", args: ["-y", "@asubilla/openapimcp", spec] };
       writeJson(client.path, cfg);
       return { ok: true };
     }
@@ -81,21 +81,21 @@ function writeClient(client: ClientInfo, spec: string, serverName: string): { ok
       const cfg = readJson(client.path) ?? {};
       cfg.mcp ??= {};
       cfg.mcp.servers ??= {};
-      cfg.mcp.servers[serverName] = { command: "npx", args: ["-y", "openapimcp", spec] };
+      cfg.mcp.servers[serverName] = { command: "npx", args: ["-y", "@asubilla/openapimcp", spec] };
       writeJson(client.path, cfg);
       return { ok: true };
     }
     if (client.id === "continue") {
       const cfg = readJson(client.path) ?? {};
       const list = Array.isArray(cfg.mcpServers) ? cfg.mcpServers : [];
-      cfg.mcpServers = list.filter((x: any) => x?.name !== serverName).concat({ name: serverName, command: "npx", args: ["-y", "openapimcp", spec] });
+      cfg.mcpServers = list.filter((x: any) => x?.name !== serverName).concat({ name: serverName, command: "npx", args: ["-y", "@asubilla/openapimcp", spec] });
       writeJson(client.path, cfg);
       return { ok: true };
     }
     if (client.id === "zed") {
       const cfg = readJson(client.path) ?? {};
       cfg.context_servers ??= {};
-      cfg.context_servers[serverName] = { command: { path: "npx", args: ["-y", "openapimcp", spec], env: {} } };
+      cfg.context_servers[serverName] = { command: { path: "npx", args: ["-y", "@asubilla/openapimcp", spec], env: {} } };
       writeJson(client.path, cfg);
       return { ok: true };
     }

@@ -21,8 +21,8 @@ Continue, and Zed on Windows, macOS, and Linux.
 ## Install
 
 ```bash
-npx openapimcp <spec>          # no install needed
-npm install -g openapimcp      # or globally
+npx @asubilla/openapimcp <spec>          # no install needed
+npm install -g @asubilla/openapimcp      # or globally
 ```
 
 Requires Node.js 20+.

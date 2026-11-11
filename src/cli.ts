@@ -234,7 +234,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
 
   if (options.printConfig) {
-    const args = ["-y", "openapimcp", ...specs];
+    const args = ["-y", "@asubilla/openapimcp", ...specs];
     if (options.baseUrl) args.push("--base-url", options.baseUrl);
     for (const header of options.header ?? []) args.push("-H", header);
     if (options.readOnly) args.push("--read-only");

@@ -28,4 +28,4 @@ runs:
       with:
         node-version: "20"
     - shell: bash
-      run: npx -y "openapimcp@${{ inputs.version }}" "${{ inputs.command }}" "${{ inputs.spec }}" ${{ inputs.args }}
+      run: npx -y "@asubilla/openapimcp@${{ inputs.version }}" "${{ inputs.command }}" "${{ inputs.spec }}" ${{ inputs.args }}

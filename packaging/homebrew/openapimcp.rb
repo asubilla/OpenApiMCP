@@ -1,7 +1,7 @@
 class Openapimcp < Formula
   desc "Turn any OpenAPI/Swagger spec into an MCP server"
   homepage "https://github.com/asubilla/OpenApiMCP"
-  url "https://registry.npmjs.org/openapimcp/-/openapimcp-1.1.0.tgz"
+  url "https://registry.npmjs.org/@asubilla/openapimcp/-/openapimcp-1.3.0.tgz"
   sha256 "REPLACE_WITH_TARBALL_SHA256"
   license "MIT"
 
@@ -13,6 +13,6 @@ class Openapimcp < Formula
   end
 
   test do
-    assert_match "1.1.0", shell_output("#{bin}/openapimcp --version")
+    assert_match "1.3.0", shell_output("#{bin}/openapimcp --version")
   end
 end
