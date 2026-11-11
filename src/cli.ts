@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -14,7 +15,6 @@ import { createLogger } from "./logger.js";
 import { createAuditLog } from "./audit.js";
 import { RateLimiter, CircuitBreaker } from "./ratelimit.js";
 import { DiskCache } from "./cache.js";
-import { Metrics } from "./metrics.js";
 import { diffSpecs } from "./diff.js";
 import { applyOverlay } from "./overlay.js";
 import { postmanToOperations } from "./postman.js";
@@ -24,9 +24,11 @@ import { formatToolDetail, formatToolList } from "./toolkit.js";
 import { loadConfig, mergeConfig, type Config } from "./config.js";
 import { applyDotenv } from "./env.js";
 import { completionsFor } from "./completions.js";
+import { Metrics } from "./metrics.js";
+import { rankTools } from "./toolsearch.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -72,7 +74,8 @@ const runtimeFlags = (cmd: Command) =>
     .option("--cache-dir <dir>", "Persistent on-disk response cache directory")
     .option("--rate-limit <n>", "Max upstream requests per second (client-side)")
     .option("--breaker", "Enable an upstream circuit breaker")
-    .option("--tool-search", "Expose search_tools + call_tool instead of every operation");
+    .option("--tool-search", "Expose search_tools + call_tool instead of every operation")
+    .option("--arg <kv...>", "Arguments as key=value (repeatable), e.g. --arg status=available");
 
 runtimeFlags(
   httpFlags(filterFlags(program.command("serve")))
@@ -108,15 +111,14 @@ runtimeFlags(
   httpFlags(
     program
       .command("call")
-      .description("Call a single tool from the terminal")
-      .argument("[spec]", "Path or URL to an OpenAPI/Swagger document")
-      .argument("[tool]", "Tool (operationId) to call")
+      .description("Call a single tool from the terminal (no AI needed)")
+      .argument("[args...]", "Optional spec followed by the tool name")
   )
 ).option("--args <json>", "Tool arguments as JSON", "{}").action(callAction);
 
 runtimeFlags(httpFlags(filterFlags(program.command("generate"))))
   .description("Generate a standalone, offline MCP server project")
-  .argument("<specs...>", "Paths or URLs to OpenAPI/Swagger documents")
+  .argument("[specs...]", "Paths or URLs to OpenAPI/Swagger documents")
   .option("--out <dir>", "Output directory", "./generated")
   .option("--name <name>", "Project name (default: slug of the spec title)")
   .action(generateAction);
@@ -160,6 +162,39 @@ program
   .action(uiAction);
 
 program
+  .command("init")
+  .description("Write an MCP client config entry for a spec")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--target <t>", "opencode | claude | cursor", "opencode")
+  .option("--global", "Write to the global config location")
+  .option("--name <name>", "Server name", "demo")
+  .action(initAction);
+
+program
+  .command("use")
+  .description("Save a default spec so you can omit it from other commands")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--local", "Save in the current directory instead of globally")
+  .action((spec: string, options: { local?: boolean }) => {
+    saveDefaultSpec(spec, !options.local);
+    process.stdout.write(`✓ default spec set to ${spec}\n`);
+  });
+
+program
+  .command("run")
+  .description("Run a task against a spec by matching tool names (no AI needed)")
+  .argument("[args...]", "Optional spec followed by a task description")
+  .option("--spec <spec>", "Spec to use (overrides positional)")
+  .option("--arg <kv...>", "Arguments as key=value (repeatable)")
+  .option("--args <json>", "Tool arguments as JSON", "{}")
+  .option("--fields <fields>", "Comma-separated response field allowlist")
+  .option("--max-bytes <n>", "Max response bytes", "20000")
+  .option("--timeout <ms>", "HTTP timeout in milliseconds", "30000")
+  .option("--base-url <url>", "Override the API base URL")
+  .option("-H, --header <header...>", "Extra HTTP header")
+  .action(runAction);
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -170,7 +205,7 @@ program
   });
 
 async function serveAction(specs: string[], rawOptions: any, command: Command): Promise<void> {
-  if (!specs?.length) program.help({ error: true });
+  if (!specs?.length) specs = resolveSpecs(undefined);
   const options = withConfig(command, rawOptions);
   const log = createLogger({ json: Boolean(options.logJson) });
   const policy = loadPolicyOption(options.policy);
@@ -216,7 +251,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
 }
 
 async function listAction(specs: string[], rawOptions: FilterOptions & { json?: boolean }, command: Command): Promise<void> {
-  if (!specs?.length) program.help({ error: true });
+  if (!specs?.length) specs = resolveSpecs(undefined);
   const options = withConfig(command, rawOptions);
   const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
@@ -231,7 +266,7 @@ async function listAction(specs: string[], rawOptions: FilterOptions & { json?: 
 }
 
 async function doctorAction(specs: string[], options: any): Promise<void> {
-  if (!specs?.length) program.help({ error: true });
+  if (!specs?.length) specs = resolveSpecs(undefined);
   const headers = parseHeaders(options.header);
   const write = (line = "") => process.stdout.write(line + "\n");
 
@@ -259,27 +294,68 @@ async function doctorAction(specs: string[], options: any): Promise<void> {
   }
 }
 
-async function callAction(spec: string | undefined, toolName: string | undefined, rawOptions: any, command: Command): Promise<void> {
-  if (!spec || !toolName) program.help({ error: true });
+async function callAction(positional: string[] | undefined, rawOptions: any, command: Command): Promise<void> {
+  const args = positional ?? [];
+  let spec: string | undefined;
+  let toolName: string | undefined;
+  if (args.length === 0) program.help({ error: true });
+  if (args.length === 1) {
+    if (isSpecArg(args[0])) {
+      spec = args[0];
+      // tool name must be provided via --tool? no; require second positional
+      fatal("missing tool name. Usage: openapimcp call <spec> <tool>  or  openapimcp call <tool> (with a default spec)");
+    } else {
+      toolName = args[0];
+    }
+  } else {
+    spec = args[0];
+    toolName = args[1];
+  }
+  if (!toolName) program.help({ error: true });
+  spec = resolveSpec(spec);
   const options = withConfig(command, rawOptions);
   const api = await loadSpec(spec!, options.overlay);
   const tool = api.tools.find((t) => t.name === toolName);
   if (!tool) fatal(`tool "${toolName}" not found. Run: openapimcp list ${spec}`);
 
-  let args: Record<string, any>;
-  try {
-    args = JSON.parse(options.args || "{}");
-  } catch {
-    fatal(`--args is not valid JSON: ${options.args}`);
+  const toolArgs = buildArgs(options);
+  const result = await callApi(tool!, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
+  process.stdout.write(result.text + "\n");
+  process.exitCode = result.isError ? 1 : 0;
+}
+
+async function runAction(positional: string[], rawOptions: any, command: Command): Promise<void> {
+  const options = withConfig(command, rawOptions);
+  let spec: string | undefined = options.spec;
+  const rest = [...(positional ?? [])];
+  if (!spec && rest.length && isSpecArg(rest[0])) spec = rest.shift();
+  spec = resolveSpec(spec);
+  const task = rest.join(" ").trim();
+
+  const api = await loadSpec(spec, options.overlay);
+  if (!task) {
+    process.stdout.write(formatToolList(api.tools) + "\n");
+    return;
   }
 
-  const result = await callApi(tool!, args!, requestOptions(api, options, loadPolicyOption(options.policy)));
+  const matches = rankTools(api.tools, task, 5);
+  if (matches.length === 0) {
+    process.stderr.write(`openapimcp: no tool matched "${task}". Available tools:\n`);
+    process.stdout.write(formatToolList(api.tools) + "\n");
+    return;
+  }
+  const tool = matches[0];
+  process.stderr.write(`openapimcp: matched "${tool.name}" (${tool.method.toUpperCase()} ${tool.path})\n`);
+  if (matches.length > 1) process.stderr.write(`  (also: ${matches.slice(1).map((t) => t.name).join(", ")})\n`);
+
+  const toolArgs = buildArgs(options);
+  const result = await callApi(tool, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
 }
 
 async function generateAction(specs: string[], rawOptions: any, command: Command): Promise<void> {
-  if (!specs?.length) program.help({ error: true });
+  if (!specs?.length) specs = resolveSpecs(undefined);
   const options = withConfig(command, rawOptions);
   const policy = loadPolicyOption(options.policy);
   const out = path.resolve(options.out ?? "./generated");
@@ -340,7 +416,8 @@ function postmanAction(collection: string, options: { json?: boolean }): void {
 }
 
 async function clientAction(spec: string, options: { out?: string; name?: string }): Promise<void> {
-  const files = generateClient(await loadDocument(spec), { name: options.name });
+  const specPath = resolveSpec(spec);
+  const files = generateClient(await loadDocument(specPath), { name: options.name });
   const out = path.resolve(options.out ?? "./client");
   for (const [file, content] of Object.entries(files)) {
     const target = path.join(out, file);
@@ -352,7 +429,7 @@ async function clientAction(spec: string, options: { out?: string; name?: string
 }
 
 async function smokeAction(spec: string, options: { out?: string; overlay?: string }): Promise<void> {
-  const api = await loadSpec(spec, options.overlay);
+  const api = await loadSpec(resolveSpec(spec), options.overlay);
   const contents = generateSmokeTests(api);
   if (options.out) {
     mkdirSync(path.dirname(path.resolve(options.out)), { recursive: true });
@@ -364,7 +441,7 @@ async function smokeAction(spec: string, options: { out?: string; overlay?: stri
 }
 
 async function uiAction(spec: string, options: { tool?: string; overlay?: string }): Promise<void> {
-  const api = await loadSpec(spec, options.overlay);
+  const api = await loadSpec(resolveSpec(spec), options.overlay);
   if (options.tool) {
     const tool = api.tools.find((t) => t.name === options.tool);
     if (!tool) fatal(`tool "${options.tool}" not found`);
@@ -372,6 +449,48 @@ async function uiAction(spec: string, options: { tool?: string; overlay?: string
   } else {
     process.stdout.write(formatToolList(api.tools) + "\n");
   }
+}
+
+async function initAction(spec: string, options: { target?: string; global?: boolean; name?: string }): Promise<void> {
+  const name = options.name ?? "demo";
+  const target = options.target ?? "opencode";
+  const entry = { type: "local", command: ["npx", "-y", "openapimcp", spec] };
+  let file: string;
+
+  if (target === "opencode") {
+    const base = options.global ? path.join(os.homedir(), ".config", "opencode") : process.cwd();
+    file = path.join(base, "opencode.json");
+    const cfg = readJsonIfExists(file) ?? { $schema: "https://opencode.ai/config.json", mcp: { servers: {} } };
+    cfg.mcp ??= { servers: {} };
+    cfg.mcp.servers ??= {};
+    cfg.mcp.servers[name] = entry;
+    writeJson(file, cfg);
+  } else if (target === "claude") {
+    const base = options.global
+      ? process.platform === "win32"
+        ? path.join(process.env.APPDATA || os.homedir(), "Claude")
+        : process.platform === "darwin"
+          ? path.join(os.homedir(), "Library", "Application Support", "Claude")
+          : path.join(os.homedir(), ".config", "Claude")
+      : process.cwd();
+    file = path.join(base, "claude_desktop_config.json");
+    const cfg = readJsonIfExists(file) ?? { mcpServers: {} };
+    cfg.mcpServers ??= {};
+    cfg.mcpServers[name] = { command: "npx", args: ["-y", "openapimcp", spec] };
+    writeJson(file, cfg);
+  } else if (target === "cursor") {
+    const base = options.global ? path.join(os.homedir(), ".cursor") : path.join(process.cwd(), ".cursor");
+    file = path.join(base, "mcp.json");
+    const cfg = readJsonIfExists(file) ?? { mcpServers: {} };
+    cfg.mcpServers ??= {};
+    cfg.mcpServers[name] = { command: "npx", args: ["-y", "openapimcp", spec] };
+    writeJson(file, cfg);
+  } else {
+    fatal(`unknown target "${target}". Use opencode | claude | cursor.`);
+  }
+
+  process.stdout.write(`✓ wrote "${name}" into ${file}\n`);
+  process.stdout.write("  restart your client (or /reload in OpenCode) to pick it up\n");
 }
 
 /** Keep only the operations that survived filtering, so the bundle stays small. */
@@ -462,7 +581,50 @@ async function loadApis(specs: string[], overlayPath?: string): Promise<ParsedAp
   };
 }
 
-/** Apply --dotenv then merge a --config file under explicitly-passed CLI flags. */
+function resolveSpecs(specs: string[] | undefined): string[] {
+  if (specs && specs.length) return specs;
+  const def = readDefaultSpec(true) ?? readDefaultSpec(false);
+  if (def) return [def];
+  fatal("no spec given. Run `openapimcp use <spec>` to set a default, or pass a spec.");
+}
+
+function resolveSpec(spec: string | undefined): string {
+  if (spec) return spec;
+  const def = readDefaultSpec(true) ?? readDefaultSpec(false);
+  if (def) return def;
+  fatal("no spec given. Run `openapimcp use <spec>` to set a default, or pass a spec.");
+}
+
+function isSpecArg(value: string): boolean {
+  if (!value) return false;
+  if (/^https?:\/\//i.test(value)) return true;
+  if (/\.(json|yaml|yml)$/i.test(value)) return true;
+  if (value.includes("/") || value.includes("\\")) return true;
+  if (existsSync(value)) return true;
+  return false;
+}
+
+function buildArgs(options: any): Record<string, unknown> {
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(options.args || "{}");
+  } catch {
+    fatal(`--args is not valid JSON: ${options.args}`);
+  }
+  for (const kv of options.arg ?? []) {
+    const index = String(kv).indexOf("=");
+    if (index === -1) fatal(`--arg "${kv}" must be in key=value form`);
+    const key = String(kv).slice(0, index).trim();
+    const raw = String(kv).slice(index + 1);
+    try {
+      args[key] = JSON.parse(raw);
+    } catch {
+      args[key] = raw;
+    }
+  }
+  return args;
+}
+
 function withConfig(command: Command, options: any): any {
   if (options.dotenv) {
     try {
@@ -495,10 +657,6 @@ function loadPolicyOption(file?: string): Policy | undefined {
   }
 }
 
-function readJson(file: string): any {
-  return JSON.parse(readFileSync(file, "utf8"));
-}
-
 function parseHeaders(list: string[] | undefined): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const raw of list ?? []) {
@@ -509,13 +667,17 @@ function parseHeaders(list: string[] | undefined): Record<string, string> {
   return headers;
 }
 
-function fieldsOf(value: unknown): string[] | undefined {
+function splitFields(value: unknown): string[] | undefined {
   if (Array.isArray(value)) return value.length ? value.map(String) : undefined;
   if (typeof value === "string") {
     const fields = value.split(",").map((field) => field.trim()).filter(Boolean);
     return fields.length ? fields : undefined;
   }
   return undefined;
+}
+
+function fieldsOf(value: unknown): string[] | undefined {
+  return splitFields(value);
 }
 
 function slug(value: string): string {
@@ -533,8 +695,47 @@ function fatal(message: string): never {
   process.exit(1);
 }
 
+function readJson(file: string): any {
+  return JSON.parse(readFileSync(file, "utf8"));
+}
+
+function readJsonIfExists(file: string): any | undefined {
+  if (!existsSync(file)) return undefined;
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function writeJson(file: string, value: unknown): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
+}
+
+function defaultSpecFile(global: boolean): string {
+  const base = global ? os.homedir() : process.cwd();
+  return path.join(base, ".openapimcp", "default");
+}
+
+function readDefaultSpec(global: boolean): string | undefined {
+  const file = defaultSpecFile(global);
+  if (!existsSync(file)) return undefined;
+  try {
+    return readFileSync(file, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveDefaultSpec(spec: string, global: boolean): void {
+  const file = defaultSpecFile(global);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, spec + "\n");
+}
+
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

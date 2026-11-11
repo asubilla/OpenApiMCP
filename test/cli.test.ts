@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,56 @@ test("doctor reports tools and auth state", () => {
   assert.match(out, /spec loaded: Demo API/);
   assert.match(out, /tools:\s+5/);
   assert.match(out, /ApiKeyAuth/);
+});
+
+test("run matches a tool by task and calls it", () => {
+  const out = run(["run", fixture, "find available pets", "--arg", "status=available", "--fields", "id,name"]);
+  assert.match(out, /HTTP 200 OK/);
+});
+
+test("ui lists tools", () => {
+  const out = run(["ui", fixture]);
+  assert.match(out, /getPetById/);
+  assert.match(out, /5 tools/);
+});
+
+test("diff reports zero breaking changes for identical specs", () => {
+  const out = run(["diff", fixture, fixture]);
+  assert.match(out, /breaking:\s+0/);
+});
+
+test("client generates a typed TypeScript client", () => {
+  const outDir = path.join(root, "test", ".tmp-client");
+  rmSync(outDir, { recursive: true, force: true });
+  run(["client", fixture, "--out", outDir]);
+  assert.ok(existsSync(path.join(outDir, "client.ts")));
+  assert.ok(existsSync(path.join(outDir, "types.ts")));
+  rmSync(outDir, { recursive: true, force: true });
+});
+
+test("smoke generates a test file", () => {
+  const outFile = path.join(root, "test", ".tmp-smoke.test.ts");
+  rmSync(outFile, { force: true });
+  run(["smoke", fixture, "--out", outFile]);
+  assert.ok(existsSync(outFile));
+  const contents = readFileSync(outFile, "utf8");
+  assert.match(contents, /getPetById/);
+  rmSync(outFile, { force: true });
+});
+
+test("init writes an opencode.json entry", () => {
+  const dir = path.join(root, "test", ".tmp-init");
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  execFileSync(process.execPath, [cli, "init", fixture, "--name", "demo"], { encoding: "utf8", cwd: dir });
+  const cfg = JSON.parse(readFileSync(path.join(dir, "opencode.json"), "utf8"));
+  assert.equal(cfg.mcp.servers.demo.type, "local");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("completions prints a shell script", () => {
+  const out = run(["completions", "bash"]);
+  assert.match(out, /openapimcp/);
 });
 
 test("multi-spec namespaces tool names", () => {
