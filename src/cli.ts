@@ -29,7 +29,7 @@ import { Metrics } from "./metrics.js";
 import { rankTools } from "./toolsearch.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -253,6 +253,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
       path: options.path ?? "/mcp",
       allowedHosts: options.allowedHost,
       allowedOrigins: options.allowedOrigin,
+      serverName,
       createServer,
       metrics,
       onListening: (url) => log.info("gateway listening", { url, tools: tools.length })

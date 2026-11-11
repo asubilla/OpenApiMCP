@@ -8,12 +8,15 @@ import {
   originValidation
 } from "@modelcontextprotocol/node";
 import { healthPayload, type Metrics } from "./metrics.js";
+import { portalHtml } from "./portal.js";
 
 export interface GatewayOptions {
   port: number;
   host: string;
   /** Path the MCP endpoint is mounted on, e.g. "/mcp". */
   path: string;
+  /** Display name for the developer portal. */
+  serverName?: string;
   /** Allowed `Host` header values. Defaults to localhost-only. */
   allowedHosts?: string[];
   /** Allowed `Origin` header values. Defaults to localhost-only. */
@@ -54,6 +57,11 @@ export function startGateway(options: GatewayOptions): Promise<Server> {
     if (req.method === "GET" && url.pathname === "/metrics" && options.metrics) {
       res.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });
       res.end(options.metrics.render());
+      return;
+    }
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/portal")) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(portalHtml(options.path, options.serverName ?? "openapimcp"));
       return;
     }
     if (url.pathname !== options.path) {

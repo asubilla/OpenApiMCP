@@ -7,6 +7,7 @@ export { callApi, renderBody, clearCache } from "./http.js";
 export type { RequestOptions, ApiResult } from "./http.js";
 export { startGateway } from "./gateway.js";
 export type { GatewayOptions } from "./gateway.js";
+export { portalHtml } from "./portal.js";
 
 // Security & policy
 export { loadPolicy, toolAllowed, hostAllowed, checkRequest } from "./policy.js";

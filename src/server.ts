@@ -60,6 +60,32 @@ export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer
       }
     );
 
+    for (const tool of api.tools) {
+      const argsSchema = tool.params.length
+        ? z.object(Object.fromEntries(tool.params.map((param) => [param.argName, jsonSchemaToZod(param.schema).optional()])))
+        : undefined;
+      server.registerPrompt(
+        `${tool.name}_help`,
+        { title: tool.annotations.title ?? tool.name, description: tool.description, argsSchema },
+        (args: Record<string, any>) => ({
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text: [
+                  `Operation: ${tool.name} (${tool.method.toUpperCase()} ${tool.path})`,
+                  tool.description ? `Description: ${tool.description}` : "",
+                  tool.params.length ? `Parameters: ${tool.params.map((param) => `${param.argName} (${param.location}, ${param.required ? "required" : "optional"})`).join("; ")}` : "Parameters: none",
+                  args && Object.keys(args).length ? `Provided values: ${JSON.stringify(args)}` : ""
+                ].filter(Boolean).join("\n")
+              }
+            }
+          ]
+        })
+      );
+    }
+
     return server;
   }
 
@@ -85,6 +111,32 @@ export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer
           return { content: [{ type: "text" as const, text: `Request failed: ${message}` }], isError: true };
         }
       }
+    );
+  }
+
+  for (const tool of api.tools) {
+    const argsSchema = tool.params.length
+      ? z.object(Object.fromEntries(tool.params.map((param) => [param.argName, jsonSchemaToZod(param.schema).optional()])))
+      : undefined;
+    server.registerPrompt(
+      `${tool.name}_help`,
+      { title: tool.annotations.title ?? tool.name, description: tool.description, argsSchema },
+      (args: Record<string, any>) => ({
+        messages: [
+          {
+            role: "user" as const,
+            content: {
+              type: "text" as const,
+              text: [
+                `Operation: ${tool.name} (${tool.method.toUpperCase()} ${tool.path})`,
+                tool.description ? `Description: ${tool.description}` : "",
+                tool.params.length ? `Parameters: ${tool.params.map((param) => `${param.argName} (${param.location}, ${param.required ? "required" : "optional"})`).join("; ")}` : "Parameters: none",
+                args && Object.keys(args).length ? `Provided values: ${JSON.stringify(args)}` : ""
+              ].filter(Boolean).join("\n")
+            }
+          }
+        ]
+      })
     );
   }
 

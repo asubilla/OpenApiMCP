@@ -75,6 +75,25 @@ openapimcp ./openapi.json --http                 # ...or as an HTTP gateway
 { "mcpServers": { "demo": { "command": "npx", "args": ["-y", "openapimcp", "./openapi.json"] } } }
 ```
 
+## Developer portal
+
+When you run the HTTP gateway, open the root URL in a browser to get a
+self-contained **"Try it"** playground — no client needed:
+
+```bash
+openapimcp ./openapi.json --http --port 3000
+# open http://127.0.0.1:3000/  -> lists every tool, lets you run them
+```
+
+The portal fetches `tools/list` from the MCP endpoint and renders a form per
+tool. Results are pretty-printed JSON.
+
+## MCP prompts
+
+Each operation is also exposed as an MCP **prompt** (`<tool>_help`) so agents
+can ask "how do I use this?" and get a parameter summary. Prompts carry the
+same descriptions, which now include any `example`/`examples` from the spec.
+
 ## Auto-configure your editors
 
 One command detects and configures every MCP client installed on your machine

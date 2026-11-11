@@ -88,7 +88,8 @@ function buildTool(
   baseUrl: string
 ): ToolDef {
   const name = sanitizeName(op.operationId || `${method}_${path}`);
-  const description = String(op.summary || op.description || `${method.toUpperCase()} ${path}`).trim();
+  const baseDescription = String(op.summary || op.description || `${method.toUpperCase()} ${path}`).trim();
+  let description = baseDescription;
 
   const merged = new Map<string, any>();
   for (const param of [...commonParams, ...(Array.isArray(op.parameters) ? op.parameters : [])]) {
@@ -151,6 +152,9 @@ function buildTool(
     }
   }
 
+  const examples = collectExamples(op, bodySchema);
+  if (examples.length) description = `${description}\n\nExamples:\n${examples.map((example) => `- ${example}`).join("\n")}`;
+
   return {
     name,
     description,
@@ -189,6 +193,52 @@ function swagger2BodySchema(op: any, commonParams: any[]): any {
   const all = [...(op.parameters ?? []), ...commonParams];
   const body = all.find((p) => p && p.in === "body");
   return body?.schema;
+}
+
+function collectExamples(op: any, bodySchema: any): string[] {
+  const out: string[] = [];
+
+  const content = op?.requestBody?.content ?? {};
+  for (const contentType of Object.keys(content)) {
+    const entry = content[contentType];
+    if (entry?.example !== undefined) out.push(formatExample(entry.example));
+    if (entry?.examples && typeof entry.examples === "object") {
+      for (const key of Object.keys(entry.examples)) {
+        const value = entry.examples[key]?.value ?? entry.examples[key];
+        if (value !== undefined) out.push(formatExample(value));
+      }
+    }
+  }
+
+  for (const param of op?.parameters ?? []) {
+    if (param?.example !== undefined) out.push(formatExample(param.example));
+    if (param?.examples && typeof param.examples === "object") {
+      for (const key of Object.keys(param.examples)) {
+        const value = param.examples[key]?.value ?? param.examples[key];
+        if (value !== undefined) out.push(formatExample(value));
+      }
+    }
+  }
+
+  if (bodySchema?.example !== undefined) out.push(formatExample(bodySchema.example));
+  if (Array.isArray(bodySchema?.examples)) for (const value of bodySchema.examples) out.push(formatExample(value));
+
+  const seen = new Set<string>();
+  const unique = out.filter((example) => {
+    if (seen.has(example)) return false;
+    seen.add(example);
+    return true;
+  });
+  return unique.slice(0, 3);
+}
+
+function formatExample(value: any): string {
+  try {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  } catch {
+    return String(value).slice(0, 120);
+  }
 }
 
 function sanitizeName(value: string): string {

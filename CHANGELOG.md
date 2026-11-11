@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0]
+
+### Added
+- **Developer portal** — self-contained "Try it" playground served at `/` of the HTTP gateway (lists tools, runs them, shows results).
+- **MCP prompts** — every operation exposed as `<tool>_help` prompt with parameter summaries.
+- **Few-shot examples** — `example`/`examples` from the spec are appended to tool descriptions.
+- **Auto-configure** (`setup` command) — detects OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed on Windows/macOS/Linux and writes their MCP config. `--dry-run`, `--project`, `--target`. Postinstall hint + `OPENAPIMCP_AUTO_SETUP=1`.
+- `--arg key=value` shorthand for `call`/`run`.
+- `init`, `use`, `run`, `client`, `smoke`, `ui`, `completions` commands.
+
+## [1.2.0]
+
+### Added
+- Auto-configure detected MCP clients (setup command + postinstall hint).
+
 ## [1.1.0]
 
 ### Added
