@@ -24,6 +24,7 @@ import { formatToolDetail, formatToolList } from "./toolkit.js";
 import { loadConfig, mergeConfig, type Config } from "./config.js";
 import { applyDotenv } from "./env.js";
 import { completionsFor } from "./completions.js";
+import { runSetup } from "./setup.js";
 import { Metrics } from "./metrics.js";
 import { rankTools } from "./toolsearch.js";
 import type { ParsedApi, ToolDef } from "./types.js";
@@ -179,6 +180,19 @@ program
     saveDefaultSpec(spec, !options.local);
     process.stdout.write(`✓ default spec set to ${spec}\n`);
   });
+
+program
+  .command("setup")
+  .description("Auto-configure every detected MCP client (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed)")
+  .argument("[spec]", "Spec to register (or use the saved default spec)")
+  .option("--name <name>", "Server name", "openapimcp")
+  .option("--target <ids...>", "Only configure these clients (e.g. opencode claude cursor)")
+  .option("--global", "Configure global (user-level) clients")
+  .option("--project", "Also configure project-level clients")
+  .option("--dry-run", "Show what would be done without writing")
+  .option("--quiet", "Minimal output")
+  .option("--postinstall", "Run in postinstall mode (gated by OPENAPIMCP_AUTO_SETUP=1)")
+  .action(setupAction);
 
 program
   .command("run")
@@ -493,6 +507,24 @@ async function initAction(spec: string, options: { target?: string; global?: boo
   process.stdout.write("  restart your client (or /reload in OpenCode) to pick it up\n");
 }
 
+async function setupAction(spec: string | undefined, options: any): Promise<void> {
+  if (options.postinstall) {
+    if (process.env.OPENAPIMCP_AUTO_SETUP !== "1") {
+      process.stdout.write("openapimcp installed. Run `npx openapimcp setup <spec>` to auto-configure your editors (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed).\n");
+      return;
+    }
+    if (!spec) spec = process.env.OPENAPIMCP_AUTO_SETUP_SPEC;
+    if (!spec) {
+      process.stdout.write("openapimcp installed. Run `npx openapimcp setup <spec>` to auto-configure your editors.\n");
+      return;
+    }
+    options.quiet = true;
+  }
+  const s = resolveSpec(spec);
+  const result = runSetup({ spec: s, serverName: options.name, targets: options.target, global: options.global, project: Boolean(options.project), dryRun: Boolean(options.dryRun), quiet: Boolean(options.quiet) });
+  if (result.errors.length) process.exitCode = 1;
+}
+
 /** Keep only the operations that survived filtering, so the bundle stays small. */
 function pruneDocument(doc: any, allowed: Set<string>): any {
   const clone = structuredClone(doc);
@@ -735,7 +767,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

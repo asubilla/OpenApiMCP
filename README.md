@@ -75,6 +75,21 @@ openapimcp ./openapi.json --http                 # ...or as an HTTP gateway
 { "mcpServers": { "demo": { "command": "npx", "args": ["-y", "openapimcp", "./openapi.json"] } } }
 ```
 
+## Auto-configure your editors
+
+One command detects and configures every MCP client installed on your machine
+(OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed) on
+Windows, macOS, and Linux:
+
+```bash
+openapimcp setup ./openapi.json          # detect + write (user-level clients by default)
+openapimcp setup ./openapi.json --project # project-level clients only
+openapimcp setup ./openapi.json --dry-run # preview without writing
+```
+
+On `npm install`, openapimcp prints a hint; set
+`OPENAPIMCP_AUTO_SETUP=1` to run setup automatically.
+
 ## Commands
 
 ```
@@ -89,6 +104,10 @@ openapimcp generate <specs...> -o .  # emit a standalone project
 openapimcp client <spec> -o ./client # generate a typed TypeScript client
 openapimcp smoke <spec> [--out f]    # generate a node:test smoke suite
 openapimcp postman <collection>      # list operations in a Postman collection
+openapimcp init <spec>              # write an MCP client config entry
+openapimcp use <spec>               # save a default spec
+openapimcp run <spec> "<task>"       # run a task by matching tool names (no AI)
+openapimcp setup [spec]             # auto-configure ALL detected editors
 openapimcp completions [shell]       # bash | zsh | fish | powershell
 ```
 
