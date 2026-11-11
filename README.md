@@ -13,6 +13,9 @@ npx @asubilla/openapimcp https://petstore3.swagger.io/api/v3/openapi.json
 
 That's it. Your agent now has hands on that API.
 
+<!-- TODO: replace with actual recording -->
+<!-- ![demo](docs/demo.gif) -->
+
 ---
 
 ## For AI agents (LLMs / MCP clients)
