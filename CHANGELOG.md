@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.12.1]
+
+### Fixed
+- **postinstall/setup hint referenced the unscoped package** — `npx openapimcp setup` → `npx @asubilla/openapimcp setup`.
+- **Synced agent skills and docs to reality** — `.claude`/`.opencode` skills updated to v1.12.x (scoped package, batch/history/bundle/pin/presets, dry-run, tenants, corporate proxy); README roadmap/test-count/docker-image tags synced; `openapimcp setup` / `init` output linted against the scoped name everywhere.
+
 ## [1.12.0]
 
 ### Added
