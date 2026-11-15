@@ -2,9 +2,9 @@
 
 > Turn any OpenAPI/Swagger spec into an MCP server — one command.
 
-[![npm version](https://img.shields.io/npm/v/openapimcp.svg)](https://www.npmjs.com/package/openapimcp)
-[![license](https://img.shields.io/npm/l/openapimcp.svg)](./LICENSE)
-[![node](https://img.shields.io/node/v/openapimcp.svg)](https://nodejs.org)
+[![npm version](https://img.shields.io/npm/v/@asubilla/openapimcp.svg)](https://www.npmjs.com/package/@asubilla/openapimcp)
+[![license](https://img.shields.io/npm/l/@asubilla/openapimcp.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/@asubilla/openapimcp.svg)](https://nodejs.org)
 [![GitHub](https://img.shields.io/github/stars/asubilla/OpenApiMCP?style=social)](https://github.com/asubilla/OpenApiMCP)
 
 ```bash
