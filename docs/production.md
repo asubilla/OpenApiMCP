@@ -5,7 +5,7 @@
 ```yaml
 services:
   openapimcp:
-    image: ghcr.io/asubilla/openapimcp:1.7.1
+    image: ghcr.io/asubilla/openapimcp:latest
     ports: ["3000:3000"]
     command: ["/app/spec.json", "--http", "--host", "0.0.0.0", "--port", "3000", "--read-only", "--policy", "/app/policy.json"]
     volumes:
@@ -22,6 +22,8 @@ services:
 ```
 
 ## 2. Reverse proxy + TLS (nginx)
+
+> **Outbound proxy as well?** If your corporate network requires an HTTP(S) proxy for outbound calls, add `--proxy http://proxy.corp:3128 --ca /path/to/corp-root.pem` to the `command:` above (needs `npm install undici`; HTTPS is CONNECT-tunneled). No code changes required.
 
 ```nginx
 server {

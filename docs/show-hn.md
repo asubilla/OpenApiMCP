@@ -35,7 +35,7 @@ A few things I'm proud of:
 - `generate` emits a standalone, publishable MCP server project (offline).
 - Works without AI: `openapimcp call <spec> <tool> --arg key=value`.
 
-It's written in TypeScript on the official MCP SDK. 232 unit tests + an
+It's written in TypeScript on the official MCP SDK. 727 unit tests + an
 end-to-end MCP handshake test + a generated-project smoke test.
 
 I know the obvious objection: "an LLM can write this in one prompt." That's true

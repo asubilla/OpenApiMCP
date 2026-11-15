@@ -378,15 +378,16 @@ JSON Schema → Zod conversion is done in-house, so there are no heavyweight cod
 - [x] Developer portal, MCP prompts, few-shot examples
 - [x] Gateway auth (API key + JWT), OAuth2 client-credentials, spec discovery, cost tracking
 - [x] Context budget, feedback store, eval harness, agent memory, workflow engine, spec linting, MCP sampling, marketplace (APIs.guru)
-- [ ] `structuredContent` output schemas
-- [ ] GraphQL / gRPC → MCP
-- [ ] Serverless adapters (Cloudflare, Vercel, Lambda)
+- [x] `structuredContent` output schemas (1.7.2)
+- [x] GraphQL → MCP (`openapimcp graphql`)
+- [x] Serverless adapters (Lambda + Cloudflare/Vercel Edge fetch handler)
+- [ ] gRPC → MCP
 
 ## Contributing
 
 ```bash
 npm install
-npm test   # build + 232 unit tests + end-to-end MCP handshake
+npm test   # build + 727 unit tests + end-to-end MCP handshake
 ```
 
 ## License
