@@ -35,6 +35,13 @@ import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 import { evaluateToolSelection, formatEvalReport } from "./eval.js";
 import { createMemory } from "./memory.js";
 import { parseGraphQLSchema, graphqlToToolName, buildGraphQLQuery } from "./graphql.js";
+import { TamperAuditLog } from "./tamper-audit.js";
+import { FeedbackStore } from "./feedback.js";
+import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
+import { SemanticCache } from "./semantic-cache.js";
+import { buildAgentCard, formatAgentCard } from "./a2a.js";
+import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, type Workflow } from "./workflow.js";
+import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
 const VERSION = "1.7.0";
@@ -86,6 +93,14 @@ const runtimeFlags = (cmd: Command) =>
     .option("--tool-search", "Expose search_tools + call_tool instead of every operation")
     .option("--arg <kv...>", "Arguments as key=value (repeatable), e.g. --arg status=available")
     .option("--watch", "Watch the spec file and exit on change (for use with a process manager)")
+    .option("--mock", "Return mock responses from the spec (offline dev)")
+    .option("--sanitize", "Wrap responses in untrusted-content markers")
+    .option("--context-budget <tokens>", "Auto-trim responses to fit a token budget")
+    .option("--tamper-audit <file>", "Append a tamper-evident (hash-chained) audit log")
+    .option("--webhook-url <url>", "POST a webhook on every tool call")
+    .option("--webhook-events <events...>", "Webhook events to trigger (default: tool.call)")
+    .option("--secrets-provider <spec>", "Secrets source: env | file:<path>")
+    .option("--feedback-file <file>", "Record tool usage feedback")
     .option("--gateway-key <key>", "Require X-API-Key header on the HTTP gateway")
     .option("--gateway-jwt-secret <secret>", "Require a signed JWT (HS256) on the HTTP gateway")
     .option("--gateway-jwt-issuer <iss>", "Expected JWT issuer")
@@ -336,6 +351,38 @@ program
   });
 
 program
+  .command("workflow")
+  .description("Run a multi-step workflow from a JSON file")
+  .argument("<file>", "Workflow JSON file")
+  .option("--spec <spec>", "Spec to resolve tool names against (for validation)")
+  .action(async (file: string, options: { spec?: string }) => {
+    let wf: any;
+    try { wf = JSON.parse(readFileSync(file, "utf8")); } catch (err) { fatal(`could not read workflow "${file}": ${err instanceof Error ? err.message : String(err)}`); }
+    const validation = validateWorkflow(wf);
+    if (!validation.valid) { process.stderr.write("Invalid workflow:\n"); for (const e of validation.errors) process.stderr.write(`  - ${e}\n`); process.exitCode = 1; return; }
+    process.stdout.write(formatWorkflow(wf) + "\n");
+    if (options.spec) {
+      const api = await loadSpec(options.spec);
+      process.stdout.write(`\nResolved against ${api.tools.length} tools from "${api.title}"\n`);
+    }
+  });
+
+program
+  .command("a2a")
+  .description("Generate an A2A agent card from a spec")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--name <name>", "Agent name")
+  .option("--url <url>", "Agent URL", "http://localhost:3000")
+  .option("--out <file>", "Write to a file instead of stdout")
+  .action(async (spec: string, options: { name?: string; url?: string; out?: string }) => {
+    const api = await loadSpec(spec);
+    const card = buildAgentCard({ name: options.name ?? api.title, description: `${api.title} MCP agent`, url: options.url ?? "http://localhost:3000", version: api.version, skills: api.tools.map((t) => ({ id: t.name, name: t.name, description: t.description, tags: t.tags })) });
+    const text = formatAgentCard(card);
+    if (options.out) { mkdirSync(path.dirname(path.resolve(options.out)), { recursive: true }); writeFileSync(options.out, text + "\n"); process.stdout.write(`✓ wrote ${options.out}\n`); }
+    else process.stdout.write(text + "\n");
+  });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -351,6 +398,9 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   const log = createLogger({ json: Boolean(options.logJson) });
   const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
+  if (options.mock) {
+    try { options.mockSpec = options.overlay ? applyOverlay(await loadDocument(specs[0]), readJson(options.overlay)) : await loadDocument(specs[0]); } catch { /* ignore */ }
+  }
   const tools = applyFilters(api.tools, options, policy);
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
 
@@ -372,6 +422,17 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
     }
   }
   options.oauthProvider = oauthProvider;
+
+  if (options.tamperAudit) options.tamperAuditLog = new TamperAuditLog(options.tamperAudit === true ? "./tamper-audit.jsonl" : options.tamperAudit);
+  if (options.feedbackFile) options.feedbackStore = new FeedbackStore(options.feedbackFile);
+  if (options.secretsProvider) {
+    const spec = options.secretsProvider;
+    if (spec === "env") options.secretsProviderInstance = envSecretProvider();
+    else if (spec.startsWith("file:")) options.secretsProviderInstance = fileSecretProvider(spec.slice(5));
+    else options.secretsProviderInstance = envSecretProvider(spec);
+  }
+  if (options.semanticCache) options.semanticCacheInstance = new SemanticCache();
+  if (options.webhookUrl) { options.webhookEvents = options.webhookEvents?.length ? options.webhookEvents : ["tool.call"]; }
 
   const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
@@ -734,7 +795,24 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     metrics: options.metrics,
     oauthProvider: options.oauthProvider,
     costLog: options.costLog,
-    costModel: options.costModel
+    costModel: options.costModel,
+    mock: Boolean(options.mock),
+    sanitize: Boolean(options.sanitize),
+    contextBudget: options.contextBudget ? { maxTokens: Number(options.contextBudget) } : undefined,
+    tamperAuditLog: options.tamperAuditLog,
+    webhookUrl: options.webhookUrl,
+    webhookEvents: options.webhookEvents,
+    secretsProvider: options.secretsProviderInstance,
+    semanticCache: Boolean(options.semanticCache),
+    feedbackStore: options.feedbackStore,
+    validateResponses: Boolean(options.validateResponses),
+    conditional: options.conditional ? readJson(options.conditional) : undefined,
+    abTest: Boolean(options.abTest),
+    a2a: Boolean(options.a2a),
+    streaming: Boolean(options.streaming),
+    sampling: Boolean(options.sampling),
+    serverless: Boolean(options.serverless),
+    structuredContent: Boolean(options.structuredContent)
   };
 }
 

@@ -9,6 +9,14 @@ import { estimateTokens } from "./cost.js";
 import type { CostTracker } from "./cost.js";
 import { redact } from "./redact.js";
 import { summarizeJson, type SummarizeOptions } from "./summarize.js";
+import { mockResponse } from "./mock.js";
+import { stripControlChars, wrapUntrusted } from "./sanitize.js";
+import { trimToBudget, type BudgetOptions } from "./context-budget.js";
+import { TamperAuditLog } from "./tamper-audit.js";
+import { buildWebhookRequest, shouldTrigger, type WebhookConfig } from "./webhook.js";
+import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
+import { SemanticCache } from "./semantic-cache.js";
+import { FeedbackStore } from "./feedback.js";
 import { cacheKey, type DiskCache } from "./cache.js";
 import type { RateLimiter, CircuitBreaker } from "./ratelimit.js";
 import type { AuditLog } from "./audit.js";
@@ -50,6 +58,26 @@ export interface RequestOptions {
   audit?: AuditLog;
   /** Prometheus metrics sink. */
   metrics?: Metrics;
+  /** Return mock responses (offline dev). */
+  mock?: boolean;
+  /** Spec document for mock responses. */
+  mockSpec?: any;
+  /** Wrap responses in untrusted-content markers. */
+  sanitize?: boolean;
+  /** Auto-trim responses to fit context budget. */
+  contextBudget?: BudgetOptions;
+  /** Use tamper-evident audit log. */
+  tamperAuditLog?: TamperAuditLog;
+  /** Webhook URL to notify on tool calls. */
+  webhookUrl?: string;
+  /** Webhook events to trigger on. */
+  webhookEvents?: string[];
+  /** Secrets provider for auth. */
+  secretsProvider?: SecretProvider;
+  /** Use semantic cache instead of exact-match cache. */
+  semanticCache?: boolean;
+  /** Feedback store for recording tool usage. */
+  feedbackStore?: FeedbackStore;
   /** OAuth2 token provider for upstream API auth. */
   oauthProvider?: OAuth2TokenProvider;
   /** Cost tracker for LLM token economics. */
@@ -58,6 +86,14 @@ export interface RequestOptions {
   costModel?: string;
   /** Path to append a JSON-lines cost log. */
   costLog?: string;
+  validateResponses?: boolean;
+  conditional?: any;
+  abTest?: boolean;
+  a2a?: boolean;
+  streaming?: boolean;
+  sampling?: boolean;
+  serverless?: boolean;
+  structuredContent?: boolean;
 }
 
 export interface ApiResult {
@@ -124,6 +160,17 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
     opts.metrics?.counter("openapimcp_tool_calls_total", { tool: tool.name, method, ok: String(ok) });
     opts.metrics?.observe("openapimcp_tool_duration_ms", durationMs, { tool: tool.name, method });
     opts.audit?.write({ time: new Date().toISOString(), tool: tool.name, method, url, status, ok, durationMs, reason });
+    if (opts.tamperAuditLog) {
+      try { opts.tamperAuditLog.write({ time: new Date().toISOString(), tool: tool.name, method, url, status, ok, durationMs }); } catch { /* ignore */ }
+    }
+    if (opts.webhookUrl && opts.webhookEvents?.length) {
+      try {
+        if (shouldTrigger({ url: opts.webhookUrl, events: opts.webhookEvents }, "tool.call")) {
+          const req = buildWebhookRequest({ url: opts.webhookUrl, events: opts.webhookEvents }, { event: "tool.call", timestamp: new Date().toISOString(), data: { tool: tool.name, method, url, status, ok } });
+          fetch(req.url, { method: "POST", headers: req.headers, body: req.body }).catch(() => {});
+        }
+      } catch { /* ignore */ }
+    }
     if (opts.costTracker) {
       opts.costTracker.record({
         tool: tool.name,
@@ -142,6 +189,14 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
     }
     return result;
   };
+
+  if (opts.mock && opts.mockSpec) {
+    const mocked = mockResponse(opts.mockSpec, tool.path, tool.method);
+    if (mocked !== undefined) {
+      const text = `${method} ${tool.path}\nHTTP 200 OK (mock)\n\n${JSON.stringify(mocked, null, 2)}`;
+      return finish({ text, isError: false }, 200);
+    }
+  }
 
   if (opts.policy) {
     const reason = checkRequest(opts.policy, tool, url);
@@ -188,6 +243,12 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
           return finish({ text: `OAuth token fetch failed: ${err instanceof Error ? err.message : String(err)}`, isError: true }, undefined, "oauth-error");
         }
       }
+      if (opts.secretsProvider) {
+        const apiKey = opts.secretsProvider.get("API_KEY") ?? opts.secretsProvider.get("APIKEY");
+        const token = opts.secretsProvider.get("TOKEN") ?? opts.secretsProvider.get("API_TOKEN");
+        if (apiKey && !headers["x-api-key"]) headers["x-api-key"] = apiKey;
+        if (token && !headers.authorization) headers.authorization = `Bearer ${token}`;
+      }
       if (opts.breaker && !opts.breaker.canRequest()) {
         return finish({ text: "Blocked by circuit breaker: upstream marked unhealthy", isError: true }, undefined, "circuit-open");
       }
@@ -233,6 +294,8 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
     rendered = renderBody(bodies[0] ?? "", opts.fields);
   }
 
+  if (opts.contextBudget) rendered = trimToBudget(rendered, opts.contextBudget).text;
+
   if (opts.summarize || opts.redact) {
     try {
       let data: any = JSON.parse(rendered);
@@ -243,6 +306,8 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       /* non-JSON body: leave as-is */
     }
   }
+
+  if (opts.sanitize) rendered = wrapUntrusted(stripControlChars(rendered), `${method} ${url}`);
 
   rendered = truncate(rendered, opts.maxBytes);
 
