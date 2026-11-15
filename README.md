@@ -120,6 +120,8 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams + developer portal
 - 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
 - 📦 **Extras** — `generate`, TS client generation, spec diff, smoke tests, Postman import, shell completions, TUI, auto-config
+- 🧵 **Batch calls** — `openapimcp batch <spec> --file calls.json --concurrency 5` runs many tool calls concurrently with partial-failure reporting
+- 🛡️ **Production guardrails** — non-loopback/no-auth/no-policy gateway checks, idempotency keys, SigV4 signing, tenant/user credential isolation, deprecated-op filtering, response normalization, budgets
 - 🐳 **Docker + Helm + Action + Homebrew + Scoop**
 
 ## Install
@@ -221,6 +223,11 @@ openapimcp lint <spec>              # lint a spec for quality issues
 openapimcp compat <spec>            # report fully/partially/unsupported operations
 openapimcp dry-run <spec> <tool>    # preview the exact request (secrets masked) without sending
 openapimcp config <file>            # validate an openapimcp config file
+openapimcp batch <spec> --file calls.json  # call many tools concurrently, partial-failure report
+openapimcp history [--file f]       # show calls recorded via --history (JSON-lines)
+openapimcp bundle <spec> [--out f]  # resolve external $refs into a self-contained spec
+openapimcp pin <spec>               # record the sha256 hash of a spec (detect unexpected changes)
+openapimcp presets                  # curated APIs: petstore, pokeapi, github (use with --preset)
 openapimcp marketplace [query]       # browse 2000+ public APIs on APIs.guru
 openapimcp init <spec>              # write an MCP client config entry
 openapimcp use <spec>               # save a default spec
@@ -234,9 +241,29 @@ openapimcp completions [shell]       # bash | zsh | fish | powershell
 `--fields` `--max-bytes` `--timeout` `--retries` `--cache-ttl` `--cache-dir`
 `--paginate` `--max-pages` `--rate-limit` `--breaker` `--redact` `--summarize`
 `--config` `--dotenv` `--overlay` `--audit` `--log-json` `--tool-search` `--arg`
-`--print-config`
+`--print-config` `--hide-deprecated` `--idempotency` `--budget` `--response-map`
+`--history` `--plugin` `--sigv4` `--resources` `--preset` `--tenants` `--tenant` `--user-key`
 
 Gateway: `--http` `--port` `--host` `--path` `--allowed-host` `--allowed-origin`.
+
+## Production hardening
+
+```bash
+openapimcp serve api.json --http --host 127.0.0.1   # refuses to bind non-loopback without auth/policy (warns/errors)
+openapimcp serve api.json --read-only               # drop all write operations
+openapimcp serve api.json --hide-deprecated         # drop deprecated/sunset operations
+openapimcp serve api.json --idempotency              # add Idempotency-Key to POST/PUT/PATCH/DELETE
+openapimcp serve api.json --budget '{"maxCalls":100,"maxBytes":1000000}' --history calls.jsonl
+openapimcp call api.json listPets --tenants tenants.json --tenant acme --user-key bob
+openapimcp serve api.json --resources                # expose spec/operations/servers/security as MCP resources
+openapimcp serve api.json --plugin ./my-auth.js      # hook beforeRequest/afterResponse
+openapimcp serve api.json --sigv4 us-east-1:execute-api   # AWS SigV4 (env: AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)
+```
+
+- **Tenant isolation** — `tenants.json` (`{"tenants": {...}}`) pins baseUrl, headers, policy and read-only per tenant, with per-user credential overrides (`users.<key>`). User creds win over tenant creds.
+- **Plugins** — a plugin is a module exporting `hooks: [{ name, beforeRequest?, afterResponse? }]` (or a default-exported single hook). `beforeRequest(req)` may return headers to merge (use it for custom auth/signing); `afterResponse(req, res)` observes status/body.
+- **Response normalization** — `--response-map '{"pick":["id"],"drop":["secret"],"rename":{"id":"userId"}}'` reshapes JSON responses for the model.
+- **Production checks** — starting the HTTP gateway with a non-loopback host, no auth, or no read-only/policy logs `ERROR`/`WARN` records with fixes.
 
 ## Auth from `securitySchemes`
 

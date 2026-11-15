@@ -42,7 +42,14 @@ import { validateConfig, formatConfigIssues } from "./config-validate.js";
 import { formatPresetList, getPreset, presetNames } from "./presets.js";
 import { bundleDocument, extractExternalRefs } from "./spec-bundle.js";
 import { pinFromSpec, formatPin } from "./spec-pin.js";
-import { checkGateway, formatProductionReport, isProductionOk } from "./production-defaults.js";
+import { isDeprecated } from "./deprecation.js";
+import { parseTenantsFile, resolveTenant, tenantNames } from "./tenant.js";
+import { checkGateway, formatProductionReport } from "./production-defaults.js";
+import { parseBudget, BudgetTracker } from "./budget.js";
+import { parseMapping } from "./response-map.js";
+import { loadPlugin } from "./plugin-hooks.js";
+import { runBatch, formatBatchResults, formatBatchSummary, type BatchResult } from "./batch.js";
+import { createCallHistory, formatCallList } from "./call-history.js";
 import { TamperAuditLog } from "./tamper-audit.js";
 import { FeedbackStore } from "./feedback.js";
 import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
@@ -52,7 +59,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.10.0";
+const VERSION = "1.11.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -72,7 +79,11 @@ const filterFlags = (cmd: Command) =>
     .option("--exclude <regex>", "Exclude tools whose name matches this regex")
     .option("--tag <tag...>", "Only include operations with these tags")
     .option("--read-only", "Expose only read operations (GET/HEAD/OPTIONS)")
-    .option("--policy <file>", "JSON policy file (allow/deny tools, methods, outbound hosts)");
+    .option("--policy <file>", "JSON policy file (allow/deny tools, methods, outbound hosts)")
+    .option("--hide-deprecated", "Drop operations marked as deprecated in the spec")
+    .option("--tenants <file>", "Tenant/user config file (JSON)")
+    .option("--tenant <name>", "Tenant name from the tenants file")
+    .option("--user-key <key>", "User key for per-user credential isolation (requires --tenants)");
 
 const httpFlags = (cmd: Command) =>
   cmd
@@ -119,6 +130,13 @@ const runtimeFlags = (cmd: Command) =>
     .option("--gateway-jwt-secret <secret>", "Require a signed JWT (HS256) on the HTTP gateway")
     .option("--gateway-jwt-issuer <iss>", "Expected JWT issuer")
     .option("--gateway-jwt-audience <aud>", "Expected JWT audience")
+    .option("--idempotency", "Add an Idempotency-Key header to unsafe methods (POST/PUT/PATCH/DELETE)")
+    .option("--sigv4 <region:service>", "Sign requests with AWS SigV4 (creds from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)")
+    .option("--plugin <path...>", "Load plugin hooks from a module (beforeRequest/afterResponse)")
+    .option("--budget <json>", "Usage budget: {\"maxCalls\": N, \"maxBytes\": N}")
+    .option("--response-map <json>", "Normalize JSON responses: {\"pick\": [...], \"rename\": {...}, \"drop\": [...]}")
+    .option("--history <file>", "Append tool calls to a JSON-lines history file (replay with `openapimcp history`)")
+    .option("--resources", "Expose the spec/operations/servers/security as MCP resources")
     .option("--cost-log <file>", "Append a JSON-lines cost log of every tool call")
     .option("--cost-model <model>", "Model used for cost estimation", "gpt-4o-mini")
     .option("--oauth2-token-url <url>", "OAuth2 token endpoint (client-credentials)")
@@ -161,8 +179,7 @@ program
 
 runtimeFlags(
   httpFlags(
-    program
-      .command("call")
+    filterFlags(program.command("call"))
       .description("Call a single tool from the terminal (no AI needed)")
       .argument("[args...]", "Optional spec followed by the tool name")
   )
@@ -257,6 +274,7 @@ program
   .option("--timeout <ms>", "HTTP timeout in milliseconds", "30000")
   .option("--base-url <url>", "Override the API base URL")
   .option("-H, --header <header...>", "Extra HTTP header")
+  .option("--mock", "Return mock responses from the spec (offline; no network)")
   .action(runAction);
 
 program
@@ -434,6 +452,69 @@ program
     process.exitCode = valid ? 0 : 1;
   });
 
+runtimeFlags(httpFlags(filterFlags(program.command("batch"))))
+  .description("Call multiple tools in one shot (JSON file: [{tool, args}])")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .requiredOption("--file <calls.json>", "JSON array of {tool, args}")
+  .option("--concurrency <n>", "Max concurrent calls", "5")
+  .option("--batch-timeout <ms>", "Per-call timeout in milliseconds", "10000")
+  .option("--json", "Print raw JSON results")
+  .action(async (spec: string, rawOptions: any, command: Command) => {
+    const options = withConfig(command, rawOptions);
+    const raw = parseJsonFlag(options.file, "--file");
+    if (!Array.isArray(raw)) fatal("--file must be a JSON array of {tool, args}");
+    const calls = raw.map((entry, i) => {
+      if (!entry || typeof entry.tool !== "string") fatal(`calls[${i}].tool must be a string`);
+      return { tool: entry.tool as string, args: (entry.args && typeof entry.args === "object" ? entry.args : {}) as Record<string, unknown> };
+    });
+    const policy = loadPolicyOption(options.policy);
+    const api = await loadSpec(spec!, options.overlay);
+    applyTenantOptions(options);
+    await maybeHideDeprecated(api, [spec!], options);
+    await applyPluginInstances(options);
+    const opts = requestOptions(api, options, policy);
+    const results = await runBatch(calls, { concurrency: Number(options.concurrency) || 5, timeoutMs: Number(options.batchTimeout) || 10000 }, async (toolName, args): Promise<BatchResult> => {
+      const tool = api.tools.find((t) => t.name === toolName);
+      if (!tool) return { tool: toolName, ok: false, error: `tool "${toolName}" not found` };
+      try {
+        const res = await callApi(tool!, args as Record<string, any>, opts);
+        return { tool: toolName, ok: !res.isError, status: res.isError ? undefined : 200, body: res.data, error: res.isError ? res.text.split("\n")[0] : undefined };
+      } catch (err) {
+        return { tool: toolName, ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+    if (options.json) {
+      process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+    } else {
+      process.stdout.write(formatBatchResults(results) + "\n");
+      const s = formatBatchSummary(results);
+      process.stderr.write(`${s.ok} ok, ${s.failed} failed, ${s.total} total\n`);
+    }
+    process.exitCode = results.some((r) => !r.ok) ? 1 : 0;
+  });
+
+program
+  .command("history")
+  .description("Show (or replay hints for) tool calls recorded via --history <file>")
+  .option("--file <file>", "History JSON-lines file", "./openapimcp-history.jsonl")
+  .option("--limit <n>", "Max entries to show", "20")
+  .option("--clear", "Delete the history file")
+  .option("--json", "Print raw JSON")
+  .action((options: any) => {
+    const history = createCallHistory(options.file);
+    if (options.clear) {
+      history.clear();
+      process.stdout.write(`✓ cleared ${options.file}\n`);
+      return;
+    }
+    const entries = history.list(Number(options.limit) || 20);
+    if (options.json) {
+      process.stdout.write(JSON.stringify(entries, null, 2) + "\n");
+      return;
+    }
+    process.stdout.write((entries.length ? formatCallList(entries) : "No calls recorded yet. Use --history <file> when calling.") + "\n");
+  });
+
 program
   .command("bundle")
   .description("Resolve external $refs and emit a self-contained spec")
@@ -493,7 +574,6 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   const options = withConfig(command, rawOptions);
   if (presetResolved.readOnly) options.readOnly = true;
   const log = createLogger({ json: Boolean(options.logJson) });
-  const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
   if (options.mock) {
     try { options.mockSpec = options.overlay ? applyOverlay(await loadDocument(specs[0]), readJson(options.overlay)) : await loadDocument(specs[0]); } catch { /* ignore */ }
@@ -519,6 +599,9 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
     if (resolved.readOnly) options.readOnly = true;
     if (resolved.policy && !options.policy) options.policy = resolved.policy;
   }
+  applyTenantOptions(options);
+  await maybeHideDeprecated(api, specs, options);
+  const policy = loadPolicyOption(options.policy);
   const tools = applyFilters(api.tools, options, policy);
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
 
@@ -552,6 +635,8 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   if (options.semanticCache) options.semanticCacheInstance = new SemanticCache();
   if (options.webhookUrl) { options.webhookEvents = options.webhookEvents?.length ? options.webhookEvents : ["tool.call"]; }
 
+  await applyPluginInstances(options);
+
   const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
   const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
@@ -579,9 +664,16 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   }
 
   const createServer = () =>
-    buildServer({ ...api, tools }, { serverName, version: VERSION, toolSearch: Boolean(options.toolSearch), structuredContent: Boolean(options.structuredContent), ...requestOpts });
+    buildServer({ ...api, tools }, { serverName, version: VERSION, toolSearch: Boolean(options.toolSearch), structuredContent: Boolean(options.structuredContent), mcpResources: Boolean(options.resources), ...requestOpts });
 
   if (options.http) {
+    const report = checkGateway({ host: options.host ?? "127.0.0.1", port: Number(options.port) || 3000, http: true, readOnly: options.readOnly, policy: options.policy, auth: gatewayAuth, allowedHosts: options.allowedHost });
+    for (const check of report.checks) {
+      if (check.severity === "info") continue;
+      const message = `production: ${check.message}${check.fix ? ` (fix: ${check.fix})` : ""}`;
+      if (check.severity === "error") log.error(message, { id: check.id });
+      else log.warn(message, { id: check.id });
+    }
     await startGateway({
       port: Number(options.port) || 3000,
       host: options.host ?? "127.0.0.1",
@@ -606,8 +698,10 @@ async function listAction(specs: string[], rawOptions: FilterOptions & { json?: 
   specs = presetResolved.specs;
   const options = withConfig(command, rawOptions);
   if (presetResolved.readOnly) options.readOnly = true;
-  const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
+  applyTenantOptions(options);
+  await maybeHideDeprecated(api, specs, options);
+  const policy = loadPolicyOption(options.policy);
   const tools = applyFilters(api.tools, options, policy);
   if (options.json) {
     const payload = tools.map((t) => ({ name: t.name, description: t.description, method: t.method, path: t.path, tags: t.tags }));
@@ -679,6 +773,11 @@ async function callAction(positional: string[] | undefined, rawOptions: any, com
     options.oauthProvider = new OAuth2TokenProvider({ tokenUrl: options.oauth2TokenUrl, clientId: options.oauth2ClientId, clientSecret: options.oauth2ClientSecret, scope: options.oauth2Scope });
   }
   const api = await loadSpec(spec!, options.overlay);
+  if (options.mock && !options.mockSpec) {
+    try { options.mockSpec = options.overlay ? applyOverlay(await loadDocument(spec!), readJson(options.overlay)) : await loadDocument(spec!); } catch { /* ignore */ }
+  }
+  applyTenantOptions(options);
+  await maybeHideDeprecated(api, [spec!], options);
   if (!options.oauthProvider) {
     for (const scheme of Object.values(api.securitySchemes ?? {})) {
       const cfg = parseOAuth2Config(scheme);
@@ -687,8 +786,12 @@ async function callAction(positional: string[] | undefined, rawOptions: any, com
   }
   const tool = api.tools.find((t) => t.name === toolName);
   if (!tool) fatal(`tool "${toolName}" not found. Run: openapimcp list ${spec}`);
+  if (options.readOnly && !["get", "head", "options"].includes(tool.method.toLowerCase())) {
+    fatal(`blocked by --read-only: ${tool.method.toUpperCase()} ${tool.path} is a mutating operation`);
+  }
 
   const toolArgs = buildArgs(options);
+  await applyPluginInstances(options);
   const result = await callApi(tool!, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
@@ -706,6 +809,11 @@ async function runAction(positional: string[], rawOptions: any, command: Command
   const task = rest.join(" ").trim();
 
   const api = await loadSpec(spec, options.overlay);
+  if (options.mock && !options.mockSpec) {
+    try { options.mockSpec = options.overlay ? applyOverlay(await loadDocument(spec), readJson(options.overlay)) : await loadDocument(spec); } catch { /* ignore */ }
+  }
+  applyTenantOptions(options);
+  await maybeHideDeprecated(api, [spec], options);
   if (!options.oauthProvider) {
     for (const scheme of Object.values(api.securitySchemes ?? {})) {
       const cfg = parseOAuth2Config(scheme);
@@ -728,6 +836,7 @@ async function runAction(positional: string[], rawOptions: any, command: Command
   if (matches.length > 1) process.stderr.write(`  (also: ${matches.slice(1).map((t) => t.name).join(", ")})\n`);
 
   const toolArgs = buildArgs(options);
+  await applyPluginInstances(options);
   const result = await callApi(tool, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
@@ -754,6 +863,7 @@ async function generateAction(specs: string[], rawOptions: any, command: Command
   specs = presetResolved.specs;
   const options = withConfig(command, rawOptions);
   if (presetResolved.readOnly) options.readOnly = true;
+  applyTenantOptions(options);
   const policy = loadPolicyOption(options.policy);
   const out = path.resolve(options.out ?? "./generated");
   const specInputs: { file: string; doc: any }[] = [];
@@ -763,6 +873,7 @@ async function generateAction(specs: string[], rawOptions: any, command: Command
     const base = await loadDocument(spec);
     const doc = options.overlay ? applyOverlay(base, readJson(options.overlay)) : base;
     const api = parseDocument(doc);
+    if (options.hideDeprecated) filterDeprecatedTools(api, doc);
     if (specs.length === 1) defaultName = slug(api.title);
     const tools = applyFilters(api.tools, options, policy);
     const allowed = new Set(tools.map((t) => `${t.method.toUpperCase()} ${t.path}`));
@@ -920,7 +1031,29 @@ function pruneDocument(doc: any, allowed: Set<string>): any {
   return clone;
 }
 
+function parseJsonFlag(value: string, flag: string): any {
+  const trimmed = value.trim();
+  try {
+    const text = (trimmed.startsWith("{") || trimmed.startsWith("[") ? value : readFileSync(value, "utf8")).replace(/^\uFEFF/, "");
+    return JSON.parse(text);
+  } catch (err) {
+    return fatal(`invalid JSON for ${flag} "${trimmed.startsWith("{") ? "(inline)" : value}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 function requestOptions(_api: ParsedApi, options: any, policy?: Policy): RequestOptions {
+  const budget = options.budget ? parseBudget(parseJsonFlag(options.budget, "--budget")) : undefined;
+  if (options.budget && !budget) fatal("--budget must be a JSON object like {\"maxCalls\": 10, \"maxBytes\": 100000}");
+  const sigv4Raw: string | undefined = options.sigv4;
+  let sigv4: { accessKeyId: string; secretAccessKey: string; region: string; service: string } | undefined;
+  if (sigv4Raw) {
+    const [region, service] = sigv4Raw.split(":");
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if (!region || !service) fatal("--sigv4 expects <region>:<service>, e.g. --sigv4 us-east-1:execute-api");
+    if (!accessKeyId || !secretAccessKey) fatal("--sigv4 needs AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment");
+    sigv4 = { accessKeyId, secretAccessKey, region, service };
+  }
   return {
     baseUrl: options.baseUrl,
     headers: parseHeaders(options.header),
@@ -940,12 +1073,19 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     audit: options.audit ? createAuditLog(options.audit) : undefined,
     metrics: options.metrics,
     oauthProvider: options.oauthProvider,
+    pluginHooks: options.pluginInstances,
+    sigv4,
+    budgetTracker: budget ? new BudgetTracker(budget) : undefined,
+    responseMap: options.responseMap ? parseMapping(parseJsonFlag(options.responseMap, "--response-map")) : undefined,
+    historyFile: options.history,
+    idempotency: Boolean(options.idempotency),
     costLog: options.costLog,
     costModel: options.costModel,
     async: options.async,
     asyncPollIntervalMs: Number(options.asyncPollInterval) || undefined,
     asyncMaxWaitMs: Number(options.asyncMaxWait) || undefined,
     mock: Boolean(options.mock),
+    mockSpec: options.mockSpec,
     sanitize: Boolean(options.sanitize),
     contextBudget: options.contextBudget ? { maxTokens: Number(options.contextBudget) } : undefined,
     tamperAuditLog: options.tamperAuditLog,
@@ -963,6 +1103,58 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     serverless: Boolean(options.serverless),
     structuredContent: Boolean(options.structuredContent)
   };
+}
+
+async function applyPluginInstances(options: any): Promise<void> {
+  if (!options.plugin?.length || options.pluginInstances) return;
+  const hooks = [];
+  for (const pluginPath of options.plugin) {
+    try {
+      hooks.push(...(await loadPlugin(pluginPath)));
+    } catch (err) {
+      fatal(`could not load plugin "${pluginPath}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  options.pluginInstances = hooks;
+}
+
+function applyTenantOptions(options: any): void {
+  if (!options.tenant) return;
+  if (!options.tenants) fatal("--tenant requires --tenants <file>");
+  let tenants: Record<string, any>;
+  try {
+    tenants = parseTenantsFile(JSON.parse(readFileSync(options.tenants, "utf8")));
+  } catch (err) {
+    fatal(`could not load tenants: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const resolved = resolveTenant(tenants, options.tenant, options.userKey);
+  if (!resolved) fatal(`tenant "${options.tenant}" not found. Available: ${tenantNames(tenants).join(", ")}`);
+  if (resolved.baseUrl && !options.baseUrl) options.baseUrl = resolved.baseUrl;
+  if (resolved.headers) options.header = [...(options.header ?? []), ...Object.entries(resolved.headers).map(([k, v]) => `${k}: ${v}`)];
+  if (resolved.readOnly) options.readOnly = true;
+  if (resolved.policy && !options.policy) options.policy = resolved.policy;
+}
+
+function filterDeprecatedTools(api: ParsedApi, doc: any): void {
+  if (!doc?.paths) return;
+  const deprecated = new Set<string>();
+  const methods = ["get", "post", "put", "patch", "delete", "head", "options"];
+  for (const [path, item] of Object.entries<any>(doc.paths ?? {})) {
+    for (const method of methods) {
+      const op = (item as any)?.[method];
+      if (op && isDeprecated(op)) deprecated.add(`${method} ${path}`);
+    }
+  }
+  api.tools = api.tools.filter((tool) => !deprecated.has(`${tool.method.toLowerCase()} ${tool.path}`));
+}
+
+async function maybeHideDeprecated(api: ParsedApi, specs: string[], options: any): Promise<void> {
+  if (!options.hideDeprecated) return;
+  try {
+    const base = await loadDocument(specs[0]);
+    const doc = options.overlay ? applyOverlay(base, readJson(options.overlay)) : base;
+    filterDeprecatedTools(api, doc);
+  } catch { /* could not inspect operations — keep all tools */ }
 }
 
 function applyFilters(tools: ToolDef[], options: FilterOptions, policy?: Policy): ToolDef[] {
@@ -1173,7 +1365,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "bundle", "pin", "presets", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "bundle", "pin", "presets", "batch", "history", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

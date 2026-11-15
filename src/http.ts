@@ -14,6 +14,12 @@ import { redact } from "./redact.js";
 import { summarizeJson, type SummarizeOptions } from "./summarize.js";
 import { mockResponse } from "./mock.js";
 import { stripControlChars, wrapUntrusted } from "./sanitize.js";
+import { applyMapping, type ResponseMapping } from "./response-map.js";
+import { BudgetTracker } from "./budget.js";
+import { IDEMPOTENCY_HEADER, resolveIdempotencyKey } from "./idempotency.js";
+import { runBeforeRequest, runAfterResponse, type PluginHook } from "./plugin-hooks.js";
+import { signRequest, type SigV4Config } from "./sigv4.js";
+import { createCallHistory } from "./call-history.js";
 import { trimToBudget, type BudgetOptions } from "./context-budget.js";
 import { TamperAuditLog } from "./tamper-audit.js";
 import { buildWebhookRequest, shouldTrigger, type WebhookConfig } from "./webhook.js";
@@ -103,6 +109,18 @@ export interface RequestOptions {
   asyncPollIntervalMs?: number;
   /** Max wait time in ms for async jobs. */
   asyncMaxWaitMs?: number;
+  /** Add an Idempotency-Key header to unsafe methods (POST/PUT/PATCH/DELETE). */
+  idempotency?: boolean;
+  /** AWS SigV4 signing (credentials from the config; typically populated from env). */
+  sigv4?: SigV4Config;
+  /** Plugin hooks run before each request / after each response. */
+  pluginHooks?: PluginHook[];
+  /** Budget tracker; blocks calls and records usage when configured. */
+  budgetTracker?: BudgetTracker;
+  /** Normalize JSON responses (pick/rename/drop). */
+  responseMap?: ResponseMapping;
+  /** Append call records to this JSON-lines file (history + replay). */
+  historyFile?: string;
 }
 
 export interface ApiResult {
@@ -164,6 +182,11 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   const qs = query.toString();
   const url = `${base}${path}${qs ? `?${qs}` : ""}`;
 
+  if (opts.idempotency && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")) {
+    const key = resolveIdempotencyKey(args);
+    if (key) headers[IDEMPOTENCY_HEADER] = key;
+  }
+
   let responseText = "";
   const finish = (result: ApiResult, status?: number, reason?: string): ApiResult => {
     const durationMs = Date.now() - started;
@@ -198,6 +221,12 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
         appendFileSync(opts.costLog, JSON.stringify(entry) + "\\n");
       } catch { /* ignore */ }
     }
+    opts.budgetTracker?.recordCall(Buffer.byteLength(responseText));
+    if (opts.historyFile) {
+      try {
+        createCallHistory(opts.historyFile).record({ tool: tool.name, method, url, args, status, ok, durationMs, responsePreview: String(responseText).slice(0, 500) });
+      } catch { /* ignore */ }
+    }
     return result;
   };
 
@@ -212,6 +241,10 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   if (opts.policy) {
     const reason = checkRequest(opts.policy, tool, url);
     if (reason) return finish({ text: `Blocked by policy: ${reason}`, isError: true }, undefined, reason);
+  }
+
+  if (opts.budgetTracker && !opts.budgetTracker.canCall()) {
+    return finish({ text: "Blocked by budget: quota exhausted", isError: true }, undefined, "budget-exhausted");
   }
 
   // Detect file uploads (body-object values starting with "@").
@@ -291,12 +324,38 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       }
       if (opts.rateLimiter) await opts.rateLimiter.acquire();
 
-      const res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, opts);
+      const payloadText = payload === undefined ? undefined : String(payload);
+      if (opts.pluginHooks?.length) {
+        try {
+          const pre = runBeforeRequest(opts.pluginHooks, { method, url: currentUrl, headers, body: payloadText });
+          Object.assign(headers, pre.headers);
+        } catch (err) {
+          return finish({ text: `Plugin hook beforeRequest failed: ${err instanceof Error ? err.message : String(err)}`, isError: true }, undefined, "plugin-error");
+        }
+      }
+      if (opts.sigv4) {
+        try {
+          const signed = signRequest(opts.sigv4, { method, url: currentUrl, headers, body: payloadText });
+          Object.assign(headers, signed);
+        } catch (err) {
+          return finish({ text: `SigV4 signing failed: ${err instanceof Error ? err.message : String(err)}`, isError: true }, undefined, "sigv4-error");
+        }
+      }
+
+      const effectiveTimeoutMs = tool.opConfig?.timeoutMs ?? opts.timeoutMs;
+      const effectiveRetries = tool.opConfig?.retries ?? opts.retries;
+      const effectiveOpts = { ...opts, timeoutMs: effectiveTimeoutMs, retries: effectiveRetries };
+      const res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, effectiveOpts);
       lastResHeaders = Object.fromEntries(res.headers.entries());
       raw = await res.text();
       lastStatus = res.status;
       lastStatusText = res.statusText;
       link = res.headers.get("link");
+      if (opts.pluginHooks?.length) {
+        try {
+          runAfterResponse(opts.pluginHooks, { method, url: currentUrl, headers, body: payloadText }, { status: lastStatus, body: raw, headers: lastResHeaders });
+        } catch { /* ignore */ }
+      }
 
       if (isAsyncAccepted(lastStatus) && opts.async !== false) {
         try {
@@ -367,6 +426,11 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   }
 
   if (opts.contextBudget) rendered = trimToBudget(rendered, opts.contextBudget).text;
+
+  if (opts.responseMap && responseData !== undefined && lastStatus < 400) {
+    responseData = applyMapping(responseData, opts.responseMap);
+    rendered = JSON.stringify(responseData, null, 2);
+  }
 
   if (opts.summarize || opts.redact) {
     try {

@@ -1,4 +1,5 @@
 import type { Param, ParsedApi, ToolAnnotations, ToolDef } from "./types.js";
+import { opConfigFor } from "./op-config.js";
 import { resolveToolSecurity, schemeAuth, type Env } from "./auth.js";
 
 const METHODS = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
@@ -56,6 +57,7 @@ export function parseDocument(api: any, options: ParseOptions = {}): ParsedApi {
     securitySchemes,
     schemesWithCreds,
     schemesWithoutCreds,
+    source: api,
   };
 }
 
@@ -166,6 +168,7 @@ function buildTool(
     annotations: annotationsFor(method, op),
     security: resolveToolSecurity(schemes, op.security ?? rootSecurity, env),
     baseUrl,
+    opConfig: opConfigFor(op, method, path)
   };
 }
 

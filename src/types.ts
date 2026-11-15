@@ -40,6 +40,8 @@ export interface ToolDef {
   security: ToolSecurity;
   /** Base URL of the API this tool belongs to (used for multi-spec servers). */
   baseUrl?: string;
+  /** Per-operation timeout/retry/response limits from `x-openapimcp` extensions. */
+  opConfig?: import("./op-config.js").OpConfig;
 }
 
 export interface ParsedApi {
@@ -52,4 +54,6 @@ export interface ParsedApi {
   schemesWithCreds: string[];
   /** Security scheme names that are declared but have no credentials set. */
   schemesWithoutCreds: string[];
+  /** The raw spec document (used to expose MCP resources). */
+  source?: unknown;
 }

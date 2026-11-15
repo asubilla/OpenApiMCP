@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,7 +40,26 @@ test("doctor reports tools and auth state", () => {
 });
 
 test("run matches a tool by task and calls it", () => {
-  const out = run(["run", fixture, "find available pets", "--arg", "status=available", "--fields", "id,name"]);
+  // Hermetic: dedicated inline fixture with an example response so --mock never touches the network.
+  const mocked = path.join(root, "test", ".tmp-run-spec.json");
+  rmSync(mocked, { force: true });
+  writeFileSync(mocked, JSON.stringify({
+    openapi: "3.0.0",
+    info: { title: "Run Mock", version: "1.0.0" },
+    servers: [{ url: "https://example.invalid" }],
+    paths: {
+      "/pet/findByStatus": {
+        get: {
+          operationId: "findPetsByStatus",
+          summary: "Find pets by status",
+          parameters: [{ name: "status", in: "query", required: false, schema: { type: "string" } }],
+          responses: { "200": { description: "ok", content: { "application/json": { example: [{ id: 1, name: "doggie" }] } } } }
+        }
+      }
+    }
+  }));
+  const out = run(["run", mocked, "find available pets", "--arg", "status=available", "--mock"]);
+  rmSync(mocked, { force: true });
   assert.match(out, /HTTP 200 OK/);
 });
 

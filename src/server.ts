@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 import { jsonSchemaToZod } from "./schema.js";
 import { callApi, type RequestOptions } from "./http.js";
 import { TOOL_CALL_NAME, TOOL_SEARCH_NAME, rankTools } from "./toolsearch.js";
+import { buildSpecResources } from "./mcp-resources.js";
 import type { ParsedApi } from "./types.js";
 
 export interface BuildServerOptions extends RequestOptions {
@@ -12,11 +13,28 @@ export interface BuildServerOptions extends RequestOptions {
   toolSearch?: boolean;
   /** Return parsed JSON in `structuredContent` for typed client consumption. */
   structuredContent?: boolean;
+  /** Expose the spec/operations/servers/security as MCP resources. */
+  mcpResources?: boolean;
 }
 
 /** Build an MCP server that exposes one tool per OpenAPI operation. */
 export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer {
   const server = new McpServer({ name: opts.serverName || "openapimcp", version: opts.version || "1.1.0" });
+
+  if (opts.mcpResources && (api as { source?: unknown }).source) {
+    for (const resource of buildSpecResources((api as { source?: unknown }).source)) {
+      try {
+        server.registerResource(
+          resource.name,
+          resource.uri,
+          { title: resource.name, description: resource.description, mimeType: resource.mimeType ?? "application/json" },
+          async (uri: URL) => ({
+            contents: [{ uri: uri.href, text: resource.text ?? "", mimeType: resource.mimeType ?? "application/json" }]
+          })
+        );
+      } catch { /* duplicate/invalid resource name — skip */ }
+    }
+  }
 
   if (opts.toolSearch) {
     server.registerTool(

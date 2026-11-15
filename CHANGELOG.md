@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.11.0]
+
+### Added
+- **`batch`** — `openapimcp batch <spec> --file calls.json [--concurrency 5] [--json]` calls many tools concurrently with partial-failure reporting.
+- **`history`** — `openapimcp history [--file f] [--limit n] [--clear]` shows calls recorded via `--history <file>` (all commands that execute HTTP requests support `--history`).
+- **Tenant isolation (wired)** — `--tenants file.json --tenant <name> --user-key <key>` on serve/call/run/list/generate/batch; per-user creds override tenant creds.
+- **`--hide-deprecated` (wired)** — drops `deprecated` / `x-sunset` operations on all tool-filtered commands and direct calls.
+- **`--idempotency`** — adds a fresh `Idempotency-Key` header to POST/PUT/PATCH/DELETE.
+- **`--budget '{"maxCalls":N,"maxBytes":N}'`** — per-gateway usage budget; blocks calls and records bytes.
+- **`--response-map '{"pick":[],"rename":{},"drop":[]}'`** — normalize JSON responses for the model.
+- **`--plugin <path...>`** — load `hooks: [{ beforeRequest?, afterResponse? }]` plugins (custom auth/signing) on the request path.
+- **`--sigv4 <region>:<service>`** — AWS SigV4 request signing (env credentials).
+- **`--resources`** — expose the spec, operations, servers and security as MCP resources (single-spec stdio/HTTP servers).
+- **Production guardrails** — starting the HTTP gateway logs `ERROR`/`WARN` checks (non-loopback host without `allowedHosts`, plain HTTP off-loopback, no read-only/policy, no auth) with fix hints.
+- **`--preset` on serve/list/doctor/generate** — curated APIs: petstore, pokeapi, github.
+- **`--read-only` on `call`** — refuses to invoke mutating operations.
+- **Per-operation `x-openapimcp`** — `x-timeout`, `x-retries`, `x-maxResponseBytes`, `x-budget` respected by the fetch path.
+
+### Fixed
+- **`--mock` was dead** — `mockSpec` was never forwarded to the request pipeline, so mock responses never engaged and every call hit the network. `mockSpec` is now wired through and mock works in serve/call/run.
+- **PowerShell quoting** — inline JSON flags (`--budget`, `--response-map`) also accept file paths; BOMs tolerated.
+
+### Changed
+- `--mock` added to `call` and `run` commands.
+
 ## [1.10.0]
 
 ### Added
