@@ -45,8 +45,24 @@ export { discoverSpec, isValidSpec, normalizeDomain, SPEC_PATHS } from "./discov
 export { CostTracker, computeCost, estimateTokens, formatCost, lookupPrice, MODEL_PRICING } from "./cost.js";
 export type { CostEntry, ModelPricing } from "./cost.js";
 
+// Advanced MCP protocol
+export { buildElicitationRequest, validateElicitationResponse, formatElicitationRequest, type ElicitationField, type ElicitationRequest } from "./elicitation.js";
+export { CancellationToken, CancellationRegistry, withCancellation } from "./cancellation.js";
+export { ProgressTracker, formatProgress, createProgressTracker, type ProgressEvent } from "./progress.js";
+
+// Semantic routing
+export { createSemanticRouter, cosineSimilarity, defaultEmbedding, type SemanticRouter, type EmbeddingFn } from "./semantic.js";
+
 // Spec discovery & marketplace
 export { searchApisGuru, getSpecFromApisGuru, formatMarketplaceList, type MarketplaceApi } from "./marketplace.js";
+
+// Future-proof: A2A, serverless, streaming, semantic cache, federation, webhooks
+export { buildAgentCard, createTask, updateTaskStatus, formatAgentCard, type AgentCard, type A2ATask } from "./a2a.js";
+export { createFetchHandler, toLambdaHandler, toVercelHandler, type ServerlessRequest, type ServerlessResponse, type McpHandler } from "./serverless.js";
+export { chunkText, formatSSE, parseSSE, mergeChunks, type StreamChunk } from "./streaming.js";
+export { cosineSimilarity as cacheCosineSimilarity, textToVector, SemanticCache, type SemanticEntry } from "./semantic-cache.js";
+export { namespaceTools, mergeServers, findTool, type FederatedServer } from "./federation.js";
+export { signPayload, verifySignature, buildWebhookRequest, shouldTrigger, type WebhookConfig, type WebhookPayload } from "./webhook.js";
 
 // Context budget
 export { estimateTokens as estimateContextTokens, fitsInBudget, trimToBudget, budgetReport, type BudgetOptions } from "./context-budget.js";

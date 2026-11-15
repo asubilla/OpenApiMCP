@@ -34,7 +34,7 @@ import { OAuth2TokenProvider, parseOAuth2Config } from "./oauth.js";
 import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
