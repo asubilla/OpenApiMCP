@@ -28,11 +28,13 @@ import { runSetup } from "./setup.js";
 import { Metrics } from "./metrics.js";
 import { rankTools } from "./toolsearch.js";
 import { discoverSpec } from "./discovery.js";
+import { searchApisGuru, getSpecFromApisGuru, formatMarketplaceList } from "./marketplace.js";
+import { lintSpec, formatLint } from "./lint.js";
 import { OAuth2TokenProvider, parseOAuth2Config } from "./oauth.js";
 import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.3.1";
+const VERSION = "1.5.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -232,6 +234,38 @@ program
     process.stderr.write(`✓ found spec at ${found.url}\n`);
     if (options.json) process.stdout.write(JSON.stringify(found.spec, null, 2) + "\n");
     else process.stdout.write(found.url + "\n");
+  });
+
+program
+  .command("lint")
+  .description("Lint an OpenAPI spec for quality issues")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--overlay <file>", "OpenAPI Overlay (JSON) applied before parsing")
+  .action(async (spec: string, options: { overlay?: string }) => {
+    const base = await loadDocument(spec);
+    const doc = options.overlay ? applyOverlay(base, readJson(options.overlay)) : base;
+    const result = lintSpec(doc);
+    process.stdout.write(formatLint(result) + "\n");
+    process.exitCode = result.summary.errors > 0 ? 1 : 0;
+  });
+
+program
+  .command("marketplace")
+  .description("Browse public APIs on APIs.guru")
+  .argument("[query]", "Search query (optional)")
+  .option("--limit <n>", "Max results", "20")
+  .option("--json", "Print JSON")
+  .option("--import <name>", "Print the spec URL for a named API")
+  .action(async (query: string | undefined, options: { limit?: string; json?: boolean; import?: string }) => {
+    if (options.import) {
+      const found = await getSpecFromApisGuru(options.import);
+      if (!found) fatal(`API "${options.import}" not found on APIs.guru`);
+      process.stdout.write(found.url + "\n");
+      return;
+    }
+    const apis = await searchApisGuru(query ?? "", Number(options.limit) || 20);
+    if (options.json) process.stdout.write(JSON.stringify(apis, null, 2) + "\n");
+    else process.stdout.write(formatMarketplaceList(apis) + "\n");
   });
 
 program
@@ -833,7 +867,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

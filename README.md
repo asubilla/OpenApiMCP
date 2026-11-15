@@ -214,6 +214,9 @@ openapimcp generate <specs...> -o .  # emit a standalone project
 openapimcp client <spec> -o ./client # generate a typed TypeScript client
 openapimcp smoke <spec> [--out f]    # generate a node:test smoke suite
 openapimcp postman <collection>      # list operations in a Postman collection
+openapimcp discover <domain>         # auto-discover an OpenAPI spec from a domain
+openapimcp lint <spec>              # lint a spec for quality issues
+openapimcp marketplace [query]       # browse 2000+ public APIs on APIs.guru
 openapimcp init <spec>              # write an MCP client config entry
 openapimcp use <spec>               # save a default spec
 openapimcp setup [spec]             # auto-configure ALL detected editors
@@ -334,9 +337,11 @@ JSON Schema → Zod conversion is done in-house, so there are no heavyweight cod
 - [x] Redaction, summarization, tool search, rate limit, circuit breaker, disk cache
 - [x] Config file, `.env`, overlays, diff, TS client, smoke tests, Postman, completions, TUI, Helm, Action, auto-config
 - [x] Developer portal, MCP prompts, few-shot examples
-- [ ] OAuth2 client-credentials flow (auto token fetch + refresh)
+- [x] Gateway auth (API key + JWT), OAuth2 client-credentials, spec discovery, cost tracking
+- [x] Context budget, feedback store, eval harness, agent memory, workflow engine, spec linting, MCP sampling, marketplace (APIs.guru)
 - [ ] `structuredContent` output schemas
 - [ ] GraphQL / gRPC → MCP
+- [ ] Serverless adapters (Cloudflare, Vercel, Lambda)
 
 ## Contributing
 

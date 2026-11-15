@@ -45,6 +45,30 @@ export { discoverSpec, isValidSpec, normalizeDomain, SPEC_PATHS } from "./discov
 export { CostTracker, computeCost, estimateTokens, formatCost, lookupPrice, MODEL_PRICING } from "./cost.js";
 export type { CostEntry, ModelPricing } from "./cost.js";
 
+// Spec discovery & marketplace
+export { searchApisGuru, getSpecFromApisGuru, formatMarketplaceList, type MarketplaceApi } from "./marketplace.js";
+
+// Context budget
+export { estimateTokens as estimateContextTokens, fitsInBudget, trimToBudget, budgetReport, type BudgetOptions } from "./context-budget.js";
+
+// Feedback
+export { FeedbackStore, createFeedbackStore, type FeedbackEntry } from "./feedback.js";
+
+// Evaluation
+export { evaluateToolSelection, formatEvalReport, type EvalCase, type EvalResult, type EvalReport } from "./eval.js";
+
+// Agent memory
+export { AgentMemory, createMemory, type MemoryEntry } from "./memory.js";
+
+// Workflow engine
+export { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, type Workflow, type WorkflowStep, type WorkflowContext } from "./workflow.js";
+
+// Spec linting
+export { lintSpec, formatLint, type LintIssue, type LintResult } from "./lint.js";
+
+// MCP sampling
+export { buildSamplingRequest, validateSamplingRequest, formatSamplingRequest, type SamplingMessage, type SamplingRequest } from "./sampling.js";
+
 // Spec utilities
 export { diffSpecs, type Change } from "./diff.js";
 export { applyOverlay } from "./overlay.js";

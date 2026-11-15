@@ -4,6 +4,30 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0]
+
+### Added
+- **Gateway auth** — protect the HTTP gateway with API keys (`--gateway-key`) or signed JWTs (HS256).
+- **OAuth2 client-credentials** — auto-fetch and refresh upstream tokens.
+- **Spec auto-discovery** — `openapimcp discover <domain>` finds an OpenAPI spec.
+- **Cost tracking** — per-tool token estimation + cost log (`--cost-log`, `--cost-model`).
+- **Agent memory** — persist facts/decisions across sessions (file-based, searchable).
+- **Workflow engine** — define multi-step tool chains with `{{placeholder}}` resolution.
+- **Spec linting** — `openapimcp lint <spec>` (10 rules, quality score).
+- **MCP sampling** — helper for server-initiated model calls.
+- **Marketplace** — `openapimcp marketplace [query]` browses 2000+ public APIs on APIs.guru.
+- **Context budget** — auto-trim responses to fit LLM context windows.
+- **Feedback store** — thumbs up/down per tool with improvement suggestions.
+- **Eval harness** — measure tool-selection accuracy.
+
+## [1.4.0]
+
+### Added
+- **Gateway auth** — protect the HTTP gateway with API keys (`--gateway-key`) or signed JWTs (HS256, `--gateway-jwt-secret`).
+- **OAuth2 client-credentials** — auto-fetch and refresh upstream tokens from env or spec security schemes.
+- **Spec auto-discovery** — `openapimcp discover <domain>` finds an OpenAPI spec by probing common paths (and APIs.guru).
+- **Cost tracking** — per-tool token estimation + cost log (`--cost-log`, `--cost-model`) with a pricing table for major models.
+
 ## [1.3.1]
 
 ### Fixed
