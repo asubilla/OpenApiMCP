@@ -36,6 +36,9 @@ import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 import { evaluateToolSelection, formatEvalReport } from "./eval.js";
 import { createMemory } from "./memory.js";
 import { parseGraphQLSchema, graphqlToToolName, buildGraphQLQuery } from "./graphql.js";
+import { buildDryRun, formatDryRun } from "./dry-run.js";
+import { parseProfilesFile, resolveProfile, profileNames } from "./env-profiles.js";
+import { validateConfig, formatConfigIssues } from "./config-validate.js";
 import { TamperAuditLog } from "./tamper-audit.js";
 import { FeedbackStore } from "./feedback.js";
 import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
@@ -45,7 +48,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.7.2";
+const VERSION = "1.8.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -101,6 +104,11 @@ const runtimeFlags = (cmd: Command) =>
     .option("--webhook-url <url>", "POST a webhook on every tool call")
     .option("--webhook-events <events...>", "Webhook events to trigger (default: tool.call)")
     .option("--structured-content", "Return parsed JSON in structuredContent for typed client consumption")
+    .option("--async", "Poll 202 Accepted responses until the job completes (default on for 202)")
+    .option("--async-poll-interval <ms>", "Polling interval in ms for async jobs", "1000")
+    .option("--async-max-wait <ms>", "Maximum wait time in ms for async jobs", "60000")
+    .option("--profile <name>", "Named profile from the profiles file")
+    .option("--profiles <file>", "Profiles file (JSON) for baseUrl/headers/policy/readOnly per environment")
     .option("--secrets-provider <spec>", "Secrets source: env | file:<path>")
     .option("--feedback-file <file>", "Record tool usage feedback")
     .option("--gateway-key <key>", "Require X-API-Key header on the HTTP gateway")
@@ -399,6 +407,27 @@ program
   });
 
 program
+  .command("dry-run")
+  .description("Show the exact request that would be sent (URL, headers, body) without sending it")
+  .argument("[args...]", "Optional spec followed by the tool name")
+  .option("--arg <kv...>", "Arguments as key=value (repeatable)")
+  .option("--base-url <url>", "Override the API base URL")
+  .option("-H, --header <header...>", "Extra HTTP header")
+  .action(dryRunAction);
+
+program
+  .command("config")
+  .description("Validate an openapimcp config file (JSON)")
+  .argument("<file>", "Path to the config JSON file")
+  .action((file: string) => {
+    let cfg: any;
+    try { cfg = JSON.parse(readFileSync(file, "utf8")); } catch (err) { fatal(`invalid JSON in "${file}": ${err instanceof Error ? err.message : String(err)}`); }
+    const { valid, issues } = validateConfig(cfg);
+    process.stdout.write(formatConfigIssues(issues) + "\n");
+    process.exitCode = valid ? 0 : 1;
+  });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -416,6 +445,27 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   const api = await loadApis(specs, options.overlay);
   if (options.mock) {
     try { options.mockSpec = options.overlay ? applyOverlay(await loadDocument(specs[0]), readJson(options.overlay)) : await loadDocument(specs[0]); } catch { /* ignore */ }
+  }
+  if (options.profile) {
+    if (!options.profiles) fatal("--profile requires --profiles <file>");
+    let profiles: Record<string, any>;
+    try {
+      profiles = parseProfilesFile(JSON.parse(readFileSync(options.profiles, "utf8")));
+    } catch (err) {
+      fatal(`could not load profiles: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const resolved = resolveProfile(profiles, options.profile);
+    if (!resolved) fatal(`profile "${options.profile}" not found. Available: ${profileNames(profiles).join(", ")}`);
+    if (resolved.baseUrl && !options.baseUrl) options.baseUrl = resolved.baseUrl;
+    if (resolved.headers) {
+      const merged = { ...resolved.headers };
+      for (const [k, v] of Object.entries(merged)) {
+        if (v.startsWith("env:")) merged[k] = process.env[v.slice(4)] ?? "";
+      }
+      options.header = [...(options.header ?? []), ...Object.entries(merged).map(([k, v]) => `${k}: ${v}`)];
+    }
+    if (resolved.readOnly) options.readOnly = true;
+    if (resolved.policy && !options.policy) options.policy = resolved.policy;
   }
   const tools = applyFilters(api.tools, options, policy);
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
@@ -627,6 +677,22 @@ async function runAction(positional: string[], rawOptions: any, command: Command
   process.exitCode = result.isError ? 1 : 0;
 }
 
+async function dryRunAction(positional: string[] | undefined, rawOptions: any, command: Command): Promise<void> {
+  const args = positional ?? [];
+  let spec: string | undefined;
+  let toolName: string | undefined;
+  if (args.length === 0) program.help({ error: true });
+  if (args.length === 1) { toolName = args[0]; } else { spec = args[0]; toolName = args[1]; }
+  spec = resolveSpec(spec);
+  const options = withConfig(command, rawOptions);
+  const api = await loadSpec(spec, options.overlay);
+  const tool = api.tools.find((t) => t.name === toolName);
+  if (!tool) fatal(`tool "${toolName}" not found. Run: openapimcp list ${spec}`);
+  const toolArgs = buildArgs(options);
+  const result = buildDryRun(tool!, toolArgs, { baseUrl: options.baseUrl ?? api.baseUrls[0], headers: parseHeaders(options.header) });
+  process.stdout.write(formatDryRun(result) + "\n");
+}
+
 async function generateAction(specs: string[], rawOptions: any, command: Command): Promise<void> {
   if (!specs?.length) specs = resolveSpecs(undefined);
   const options = withConfig(command, rawOptions);
@@ -818,6 +884,9 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     oauthProvider: options.oauthProvider,
     costLog: options.costLog,
     costModel: options.costModel,
+    async: options.async,
+    asyncPollIntervalMs: Number(options.asyncPollInterval) || undefined,
+    asyncMaxWaitMs: Number(options.asyncMaxWait) || undefined,
     mock: Boolean(options.mock),
     sanitize: Boolean(options.sanitize),
     contextBudget: options.contextBudget ? { maxTokens: Number(options.contextBudget) } : undefined,
@@ -1046,7 +1115,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

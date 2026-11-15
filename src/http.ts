@@ -3,7 +3,10 @@ import { filterFields } from "./filter.js";
 import { checkRequest, type Policy } from "./policy.js";
 import type { OAuth2TokenProvider } from "./oauth.js";
 import { recordToolCall } from "./telemetry.js";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { isAsyncAccepted, findStatusUrl, parseJobResult, pollUntilDone } from "./async-jobs.js";
+import { buildMultipartBody, type MultipartFile } from "./multipart.js";
+import { formatUpstreamError } from "./redact-errors.js";
 import { dirname } from "node:path";
 import { estimateTokens } from "./cost.js";
 import type { CostTracker } from "./cost.js";
@@ -94,6 +97,12 @@ export interface RequestOptions {
   sampling?: boolean;
   serverless?: boolean;
   structuredContent?: boolean;
+  /** Poll 202 Accepted responses until the job completes (or times out). */
+  async?: boolean;
+  /** Polling interval in ms for async jobs. */
+  asyncPollIntervalMs?: number;
+  /** Max wait time in ms for async jobs. */
+  asyncMaxWaitMs?: number;
 }
 
 export interface ApiResult {
@@ -205,15 +214,41 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
     if (reason) return finish({ text: `Blocked by policy: ${reason}`, isError: true }, undefined, reason);
   }
 
-  if (hasBody) headers["content-type"] = headers["content-type"] ?? "application/json";
-  const payload = hasBody ? JSON.stringify(tool.bodyObject ? body : bodyValue) : undefined;
-  const memKey = `${method} ${url} ${payload ?? ""}`;
-  const diskKey = cacheKey(method, url, payload);
+  // Detect file uploads (body-object values starting with "@").
+  const fileArgs: MultipartFile[] = [];
+  if (tool.bodyObject) {
+    for (const [k, v] of Object.entries(body)) {
+      if (typeof v === "string" && v.startsWith("@")) {
+        const p = v.slice(1);
+        try {
+          fileArgs.push({ name: k, filename: p.split(/[\\/]/).pop() ?? k, data: readFileSync(p) });
+        } catch { /* keep original value for diagnosis */ }
+      }
+    }
+  }
+  let payload: string | Buffer | undefined;
+  if (hasBody && fileArgs.length > 0) {
+    const plain: Record<string, string | number | boolean> = {};
+    for (const [k, v] of Object.entries(body)) {
+      if (fileArgs.find((f) => f.name === k)) continue;
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") plain[k] = v;
+      else plain[k] = JSON.stringify(v);
+    }
+    const mp = buildMultipartBody(plain, fileArgs);
+    headers["content-type"] = mp.contentType;
+    payload = mp.body;
+  } else {
+    if (hasBody) headers["content-type"] = headers["content-type"] ?? "application/json";
+    payload = hasBody ? JSON.stringify(tool.bodyObject ? body : bodyValue) : undefined;
+  }
+  const memKey = `${method} ${url} ${payload === undefined ? "" : String(payload)}`;
+  const diskKey = cacheKey(method, url, payload === undefined ? undefined : String(payload));
   const useCache = isSafe && (opts.cacheTtlMs ?? 0) > 0;
 
   const maxPages = opts.paginate ? Math.max(1, opts.maxPages ?? 5) : 1;
   const bodies: string[] = [];
   const parsed: any[] = [];
+  let lastResHeaders: Record<string, string> = {};
   let currentUrl = url;
   let lastStatus = 0;
   let lastStatusText = "";
@@ -257,10 +292,37 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       if (opts.rateLimiter) await opts.rateLimiter.acquire();
 
       const res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, opts);
+      lastResHeaders = Object.fromEntries(res.headers.entries());
       raw = await res.text();
       lastStatus = res.status;
       lastStatusText = res.statusText;
       link = res.headers.get("link");
+
+      if (isAsyncAccepted(lastStatus) && opts.async !== false) {
+        try {
+          const parsed = JSON.parse(raw);
+          const statusUrl = findStatusUrl(parsed, lastResHeaders, base);
+          if (statusUrl) {
+            const poll = await pollUntilDone(
+              async (u) => {
+                const r = await fetch(u, { headers: { accept: "application/json", ...headers } });
+                const body = await r.text();
+                return { status: r.status, body };
+              },
+              statusUrl,
+              { pollIntervalMs: opts.asyncPollIntervalMs, maxWaitMs: opts.asyncMaxWaitMs }
+            );
+            if (poll.done) {
+              raw = typeof poll.result === "string" ? poll.result : JSON.stringify(poll.result ?? null);
+              lastStatus = 200;
+              lastStatusText = "OK";
+              link = null;
+            } else {
+              lastStatusText = poll.timedOut ? "Timeout" : "Accepted";
+            }
+          }
+        } catch { /* keep 202 response as-is */ }
+      }
 
       if (res.status >= 500 || res.status === 429) opts.breaker?.onFailure();
       else opts.breaker?.onSuccess();
@@ -289,7 +351,11 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
 
   let rendered: string;
   let responseData: unknown = undefined;
-  if (opts.paginate && parsed.some((p) => p !== undefined)) {
+  if (lastStatus >= 400) {
+    const enriched = formatUpstreamError(lastStatus, bodies[0], lastResHeaders, { redact: true });
+    rendered = enriched.text;
+    try { responseData = JSON.parse(bodies[0]); } catch { responseData = undefined; }
+  } else if (opts.paginate && parsed.some((p) => p !== undefined)) {
     let data = collectPages(parsed.filter((p) => p !== undefined));
     if (opts.fields && opts.fields.length) data = filterFields(data, opts.fields);
     responseData = data;
@@ -326,7 +392,7 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
 
 async function fetchWithRetry(
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string | Buffer },
   opts: RequestOptions
 ): Promise<Response> {
   const retries = Math.max(0, opts.retries ?? 0);

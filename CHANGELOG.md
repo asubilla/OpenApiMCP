@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0]
+
+### Added
+- **Async job support** — 202 Accepted responses are polled until completion (or timeout) with `--async`, `--async-poll-interval`, `--async-max-wait`.
+- **File upload / multipart** — body args starting with `@path/to/file` are sent as `multipart/form-data`.
+- **`dry-run`** — preview the exact request (method, URL, headers with secrets masked, body) without sending.
+- **`--profile` / `--profiles`** — named environments (baseUrl, headers, readOnly, policy); `env:KEY` header values resolve from environment variables.
+- **Config validation** — `openapimcp config <file>` validates a config file and exits non-zero on errors; warnings for unknown keys.
+- **`compat`** — `openapimcp compat <spec>` reports fully/partially/unsupported operations; `doctor` now shows a summary too.
+- **Error enrichment** — upstream errors now include request-id, Retry-After, content-type, and redacted bodies.
+
 ## [1.7.2]
 
 ### Added

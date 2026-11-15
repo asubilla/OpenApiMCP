@@ -49,6 +49,12 @@ export type { CostEntry, ModelPricing } from "./cost.js";
 export { buildElicitationRequest, validateElicitationResponse, formatElicitationRequest, type ElicitationField, type ElicitationRequest } from "./elicitation.js";
 export { CancellationToken, CancellationRegistry, withCancellation } from "./cancellation.js";
 export { ProgressTracker, formatProgress, createProgressTracker, type ProgressEvent } from "./progress.js";
+export { isAsyncAccepted, findStatusUrl, parseJobResult, pollUntilDone, buildAsyncConfig, type AsyncJobConfig, type JobPollResult } from "./async-jobs.js";
+export { boundary, buildMultipartBody, parseMultipartFields, type MultipartFile, type MultipartBody } from "./multipart.js";
+export { buildDryRun, formatDryRun, redactHeaderValue, type DryRunResult, type DryRunOptions } from "./dry-run.js";
+export { parseProfilesFile, resolveProfile, profileNames, formatProfile, type Profile, type ProfilesFile } from "./env-profiles.js";
+export { extractRequestId, extractRetryAfter, redactSecrets, formatUpstreamError, type EnrichedError } from "./redact-errors.js";
+export { KNOWN_KEYS, validateConfig, formatConfigIssues, type ConfigIssue } from "./config-validate.js";
 
 // Semantic routing
 export { createSemanticRouter, cosineSimilarity, defaultEmbedding, type SemanticRouter, type EmbeddingFn } from "./semantic.js";

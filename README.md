@@ -115,6 +115,8 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 - 🪶 **Context-friendly** — field allowlists, response summarization, redaction
 - ♻️ **Resilient** — retries, caching (memory + disk), pagination, rate limiting, circuit breaker
 - 🔎 **Progressive tool search** — `search_tools` + `call_tool` for huge APIs
+- 🗜️ **Context-friendly** — field allowlists, response summarization, redaction, structuredContent
+- ⏳ **Async jobs** — 202 Accepted polling, status-URL detection, timeout/retry
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams + developer portal
 - 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
 - 📦 **Extras** — `generate`, TS client generation, spec diff, smoke tests, Postman import, shell completions, TUI, auto-config
@@ -217,6 +219,8 @@ openapimcp postman <collection>      # list operations in a Postman collection
 openapimcp discover <domain>         # auto-discover an OpenAPI spec from a domain
 openapimcp lint <spec>              # lint a spec for quality issues
 openapimcp compat <spec>            # report fully/partially/unsupported operations
+openapimcp dry-run <spec> <tool>    # preview the exact request (secrets masked) without sending
+openapimcp config <file>            # validate an openapimcp config file
 openapimcp marketplace [query]       # browse 2000+ public APIs on APIs.guru
 openapimcp init <spec>              # write an MCP client config entry
 openapimcp use <spec>               # save a default spec
