@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0]
+
+### Added
+- **`presets`** — `openapimcp presets` lists curated APIs (petstore, pokeapi, github); `--preset <name>` on serve/list/doctor uses them automatically (read-only where appropriate).
+- **`response-map.ts`** — normalize awkward API responses: pick/rename/drop fields (`applyMapping`).
+- **`budget.ts`** — per-gateway usage budgets (`--budget`, `BudgetTracker`).
+- **`plugin-hooks.ts`** — before/after request plugin hooks; dynamic loading via `loadPlugin`.
+- **`batch.ts`** — `runBatch()` with concurrency control, order preservation, partial-failure reporting.
+- **`proxy-tls.ts`** — corporate CA / proxy / TLS config (`planProxyTls`, env-var based).
+
 ## [1.8.0]
 
 ### Added

@@ -39,6 +39,7 @@ import { parseGraphQLSchema, graphqlToToolName, buildGraphQLQuery } from "./grap
 import { buildDryRun, formatDryRun } from "./dry-run.js";
 import { parseProfilesFile, resolveProfile, profileNames } from "./env-profiles.js";
 import { validateConfig, formatConfigIssues } from "./config-validate.js";
+import { formatPresetList, getPreset, presetNames } from "./presets.js";
 import { TamperAuditLog } from "./tamper-audit.js";
 import { FeedbackStore } from "./feedback.js";
 import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
@@ -48,7 +49,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.8.0";
+const VERSION = "1.9.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -131,6 +132,7 @@ runtimeFlags(
     .option("--http", "Serve over Streamable HTTP instead of stdio")
     .option("--port <n>", "HTTP port", "3000")
     .option("--host <addr>", "HTTP bind address", "127.0.0.1")
+    .option("--preset <name>", "Use a curated API preset instead of passing a spec URL")
     .option("--path <path>", "HTTP endpoint path", "/mcp")
     .option("--allowed-host <host...>", "Allowed Host headers for the HTTP gateway")
     .option("--allowed-origin <origin...>", "Allowed Origin headers for the HTTP gateway")
@@ -140,6 +142,7 @@ runtimeFlags(filterFlags(program.command("list")))
   .description("List the tools the specs would expose")
   .argument("[specs...]", "Paths or URLs to OpenAPI/Swagger documents")
   .option("--json", "Print JSON")
+  .option("--preset <name>", "Use a curated API preset instead of passing a spec URL")
   .action(listAction);
 
 program
@@ -150,6 +153,7 @@ program
   .option("-H, --header <header...>", "Extra HTTP header for the connectivity check")
   .option("--overlay <file>", "OpenAPI Overlay (JSON) applied before parsing")
   .option("--timeout <ms>", "HTTP timeout in milliseconds", "10000")
+  .option("--preset <name>", "Use a curated API preset instead of passing a spec URL")
   .action(doctorAction);
 
 runtimeFlags(
@@ -428,6 +432,11 @@ program
   });
 
 program
+  .command("presets")
+  .description("List curated API presets (petstore, pokeapi, github)")
+  .action(() => { process.stdout.write(formatPresetList() + "\n"); });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -437,9 +446,21 @@ program
     process.stdout.write(completionsFor(chosen as "bash") + "\n");
   });
 
+function resolvePreset(specs: string[] | undefined, options: any): { specs: string[]; readOnly?: boolean } {
+  if (specs && specs.length) return { specs };
+  if (options?.preset) {
+    const p = getPreset(options.preset);
+    if (!p) fatal(`unknown preset "${options.preset}". Available: ${presetNames().join(", ")}`);
+    return { specs: [p.specUrl], readOnly: p.readOnly };
+  }
+  return { specs: resolveSpecs(undefined) };
+}
+
 async function serveAction(specs: string[], rawOptions: any, command: Command): Promise<void> {
-  if (!specs?.length) specs = resolveSpecs(undefined);
+  const presetResolved = resolvePreset(specs, rawOptions);
+  specs = presetResolved.specs;
   const options = withConfig(command, rawOptions);
+  if (presetResolved.readOnly) options.readOnly = true;
   const log = createLogger({ json: Boolean(options.logJson) });
   const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
@@ -550,8 +571,10 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
 }
 
 async function listAction(specs: string[], rawOptions: FilterOptions & { json?: boolean }, command: Command): Promise<void> {
-  if (!specs?.length) specs = resolveSpecs(undefined);
+  const presetResolved = resolvePreset(specs, rawOptions);
+  specs = presetResolved.specs;
   const options = withConfig(command, rawOptions);
+  if (presetResolved.readOnly) options.readOnly = true;
   const policy = loadPolicyOption(options.policy);
   const api = await loadApis(specs, options.overlay);
   const tools = applyFilters(api.tools, options, policy);
@@ -565,7 +588,9 @@ async function listAction(specs: string[], rawOptions: FilterOptions & { json?: 
 }
 
 async function doctorAction(specs: string[], options: any): Promise<void> {
-  if (!specs?.length) specs = resolveSpecs(undefined);
+  const presetResolved = resolvePreset(specs, options);
+  specs = presetResolved.specs;
+  if (presetResolved.readOnly) options.readOnly = true;
   const headers = parseHeaders(options.header);
   const write = (line = "") => process.stdout.write(line + "\n");
 
@@ -694,8 +719,10 @@ async function dryRunAction(positional: string[] | undefined, rawOptions: any, c
 }
 
 async function generateAction(specs: string[], rawOptions: any, command: Command): Promise<void> {
-  if (!specs?.length) specs = resolveSpecs(undefined);
+  const presetResolved = resolvePreset(specs, rawOptions);
+  specs = presetResolved.specs;
   const options = withConfig(command, rawOptions);
+  if (presetResolved.readOnly) options.readOnly = true;
   const policy = loadPolicyOption(options.policy);
   const out = path.resolve(options.out ?? "./generated");
   const specInputs: { file: string; doc: any }[] = [];
@@ -1115,7 +1142,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "presets", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

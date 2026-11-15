@@ -55,6 +55,12 @@ export { buildDryRun, formatDryRun, redactHeaderValue, type DryRunResult, type D
 export { parseProfilesFile, resolveProfile, profileNames, formatProfile, type Profile, type ProfilesFile } from "./env-profiles.js";
 export { extractRequestId, extractRetryAfter, redactSecrets, formatUpstreamError, type EnrichedError } from "./redact-errors.js";
 export { KNOWN_KEYS, validateConfig, formatConfigIssues, type ConfigIssue } from "./config-validate.js";
+export { applyMapping, parseMapping, formatMapping, type ResponseMapping } from "./response-map.js";
+export { BudgetTracker, parseBudget, formatBudget, type BudgetConfig } from "./budget.js";
+export { API_PRESETS, getPreset, presetNames, formatPresetList, type ApiPreset } from "./presets.js";
+export { runBeforeRequest, runAfterResponse, validatePlugin, loadPlugin, type PluginHook, type HookRequest, type HookResponse } from "./plugin-hooks.js";
+export { runBatch, formatBatchResults, formatBatchSummary, type BatchCall, type BatchResult } from "./batch.js";
+export { buildProxyEnv, planProxyTls, formatProxyTls, type ProxyTlsOptions, type ProxyTlsPlan } from "./proxy-tls.js";
 
 // Semantic routing
 export { createSemanticRouter, cosineSimilarity, defaultEmbedding, type SemanticRouter, type EmbeddingFn } from "./semantic.js";
