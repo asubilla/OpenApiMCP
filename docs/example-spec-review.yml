@@ -1,0 +1,32 @@
+# Example: GitHub Action for reviewing OpenAPI spec changes on a PR.
+# Copy this into your API repo's .github/workflows/ directory and adjust paths.
+#
+# What it does:
+#   1. Extracts the base branch's spec to /tmp/base-openapi.json
+#   2. Runs `openapimcp diff <base> <head>`
+#   3. Fails the PR check if breaking changes are found
+name: OpenAPI spec review
+on:
+  pull_request:
+    paths:
+      - "openapi.json"
+      - "openapi.yaml"
+
+jobs:
+  spec-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base spec
+        run: |
+          git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json || true
+
+      - name: Diff base vs head
+        uses: asubilla/OpenApiMCP@main
+        with:
+          spec: /tmp/base-openapi.json
+          command: diff
+          args: openapi.json

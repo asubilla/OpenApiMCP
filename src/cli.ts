@@ -40,6 +40,9 @@ import { buildDryRun, formatDryRun } from "./dry-run.js";
 import { parseProfilesFile, resolveProfile, profileNames } from "./env-profiles.js";
 import { validateConfig, formatConfigIssues } from "./config-validate.js";
 import { formatPresetList, getPreset, presetNames } from "./presets.js";
+import { bundleDocument, extractExternalRefs } from "./spec-bundle.js";
+import { pinFromSpec, formatPin } from "./spec-pin.js";
+import { checkGateway, formatProductionReport, isProductionOk } from "./production-defaults.js";
 import { TamperAuditLog } from "./tamper-audit.js";
 import { FeedbackStore } from "./feedback.js";
 import { chainSecretProviders, envSecretProvider, fileSecretProvider, type SecretProvider } from "./secrets.js";
@@ -49,7 +52,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.9.0";
+const VERSION = "1.10.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -429,6 +432,34 @@ program
     const { valid, issues } = validateConfig(cfg);
     process.stdout.write(formatConfigIssues(issues) + "\n");
     process.exitCode = valid ? 0 : 1;
+  });
+
+program
+  .command("bundle")
+  .description("Resolve external $refs and emit a self-contained spec")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--out <file>", "Write bundled spec to a file (default: stdout)")
+  .option("--timeout <ms>", "Fetch timeout in milliseconds", "10000")
+  .action(async (spec: string, options: { out?: string; timeout: string }) => {
+    const doc = await loadDocument(spec);
+    const bundled = await bundleDocument(doc, async (url) => (await fetch(url)).json(), { timeoutMs: Number(options.timeout) || 10000 });
+    const text = JSON.stringify(bundled, null, 2) + "\n";
+    if (options.out) {
+      mkdirSync(path.dirname(path.resolve(options.out)), { recursive: true });
+      writeFileSync(options.out, text);
+      process.stdout.write(`✓ wrote ${options.out}\n`);
+    } else {
+      process.stdout.write(text);
+    }
+  });
+
+program
+  .command("pin")
+  .description("Record the hash of a spec (to detect unexpected spec changes)")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .action(async (spec: string) => {
+    const pin = pinFromSpec(spec, await loadDocument(spec));
+    process.stdout.write(formatPin(pin) + "\n");
   });
 
 program
@@ -1142,7 +1173,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "presets", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "bundle", "pin", "presets", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

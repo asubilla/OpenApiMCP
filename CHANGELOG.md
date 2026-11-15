@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.10.0]
+
+### Added
+- **`bundle`** — `openapimcp bundle <spec> [--out]` resolves external `$ref`s into a self-contained spec.
+- **`pin`** — `openapimcp pin <spec>` records a sha256 hash of the spec (detect unexpected changes).
+- **call-history** — persistent call history with replay (`--history <file>`).
+- **idempotency** — `Idempotency-Key` header generation and propagation.
+- **sigv4** — AWS SigV4 request signing.
+- **deprecation** — detect/hide deprecated operations.
+- **op-config** — per-operation timeout/retry/response limits from `x-openapimcp` extensions.
+- **mcp-resources** — expose spec/operations/servers/security as MCP resources.
+- **production-defaults** — gateway safety checks (non-loopback, no-auth, no-policy warnings).
+- **tenant** — multi-tenant config (`--tenant`, per-user credential isolation).
+
 ## [1.9.0]
 
 ### Added

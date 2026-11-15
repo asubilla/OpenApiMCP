@@ -62,6 +62,18 @@ export { runBeforeRequest, runAfterResponse, validatePlugin, loadPlugin, type Pl
 export { runBatch, formatBatchResults, formatBatchSummary, type BatchCall, type BatchResult } from "./batch.js";
 export { buildProxyEnv, planProxyTls, formatProxyTls, type ProxyTlsOptions, type ProxyTlsPlan } from "./proxy-tls.js";
 
+// Wave C — more features
+export { createCallHistory, formatCallList, replayArgs, type CallRecord } from "./call-history.js";
+export { generateIdempotencyKey, IDEMPOTENCY_HEADER, isIdempotencyHeader, resolveIdempotencyKey, stripIdempotencyArg, withIdempotency } from "./idempotency.js";
+export { bundleDocument, extractExternalRefs, rewriteRelativeRefs, type BundleOptions } from "./spec-bundle.js";
+export { createPin, formatPin, hashDocument, pinFromSpec, verifyPin, type SpecPin } from "./spec-pin.js";
+export { canonicalUri, normalizeHeaders, sha256Hex, signRequest, type SigV4Config, type SignableRequest } from "./sigv4.js";
+export { annotateTools, extractDeprecation, filterDeprecated, formatDeprecationWarnings, isDeprecated, warnInactive, type DeprecationInfo } from "./deprecation.js";
+export { formatOpConfig, opConfigFor, parseOpConfig, resolveRetries, resolveTimeoutMs, type OpConfig } from "./op-config.js";
+export { buildSpecResources, formatResourcesSummary, listResourceUris, type McpResource } from "./mcp-resources.js";
+export { checkGateway, formatProductionReport, isProductionOk, type ProductionCheck, type ProductionReport } from "./production-defaults.js";
+export { formatTenant, parseTenantsFile, resolveTenant, tenantNames, type TenantConfig, type TenantsFile, type UserCreds } from "./tenant.js";
+
 // Semantic routing
 export { createSemanticRouter, cosineSimilarity, defaultEmbedding, type SemanticRouter, type EmbeddingFn } from "./semantic.js";
 
