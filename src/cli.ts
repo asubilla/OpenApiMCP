@@ -48,6 +48,7 @@ import { checkGateway, formatProductionReport } from "./production-defaults.js";
 import { parseBudget, BudgetTracker } from "./budget.js";
 import { parseMapping } from "./response-map.js";
 import { loadPlugin } from "./plugin-hooks.js";
+import { createDispatcher, formatDispatcherPlan } from "./proxy-dispatcher.js";
 import { runBatch, formatBatchResults, formatBatchSummary, type BatchResult } from "./batch.js";
 import { createCallHistory, formatCallList } from "./call-history.js";
 import { TamperAuditLog } from "./tamper-audit.js";
@@ -59,7 +60,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.11.0";
+const VERSION = "1.12.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -135,6 +136,8 @@ const runtimeFlags = (cmd: Command) =>
     .option("--plugin <path...>", "Load plugin hooks from a module (beforeRequest/afterResponse)")
     .option("--budget <json>", "Usage budget: {\"maxCalls\": N, \"maxBytes\": N}")
     .option("--response-map <json>", "Normalize JSON responses: {\"pick\": [...], \"rename\": {...}, \"drop\": [...]}")
+    .option("--ca <file>", "Trust a CA bundle for upstream HTTPS (e.g. corporate proxy root)")
+    .option("--proxy <url>", "Route upstream requests via a proxy (CONNECT for HTTPS targets)")
     .option("--history <file>", "Append tool calls to a JSON-lines history file (replay with `openapimcp history`)")
     .option("--resources", "Expose the spec/operations/servers/security as MCP resources")
     .option("--cost-log <file>", "Append a JSON-lines cost log of every tool call")
@@ -472,6 +475,7 @@ runtimeFlags(httpFlags(filterFlags(program.command("batch"))))
     applyTenantOptions(options);
     await maybeHideDeprecated(api, [spec!], options);
     await applyPluginInstances(options);
+    await applyProxy(options);
     const opts = requestOptions(api, options, policy);
     const results = await runBatch(calls, { concurrency: Number(options.concurrency) || 5, timeoutMs: Number(options.batchTimeout) || 10000 }, async (toolName, args): Promise<BatchResult> => {
       const tool = api.tools.find((t) => t.name === toolName);
@@ -606,7 +610,10 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   if (tools.length === 0) fatal("no tools matched. Check the spec and your filters.");
 
   const metrics = options.http ? new Metrics() : undefined;
-  if (metrics) options.metrics = metrics;
+  if (metrics) {
+    metrics.counter("openapimcp_gateway_info", { version: VERSION });
+    options.metrics = metrics;
+  }
 
   const gatewayAuth: GatewayAuthConfig | undefined =
     options.gatewayKey || options.gatewayJwtSecret
@@ -636,6 +643,8 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   if (options.webhookUrl) { options.webhookEvents = options.webhookEvents?.length ? options.webhookEvents : ["tool.call"]; }
 
   await applyPluginInstances(options);
+  await applyProxy(options);
+  if (options.dispatcher) log.info(formatDispatcherPlan({ ca: options.ca, proxy: options.proxy }));
 
   const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
@@ -792,6 +801,7 @@ async function callAction(positional: string[] | undefined, rawOptions: any, com
 
   const toolArgs = buildArgs(options);
   await applyPluginInstances(options);
+  await applyProxy(options);
   const result = await callApi(tool!, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
@@ -837,6 +847,7 @@ async function runAction(positional: string[], rawOptions: any, command: Command
 
   const toolArgs = buildArgs(options);
   await applyPluginInstances(options);
+  await applyProxy(options);
   const result = await callApi(tool, toolArgs, requestOptions(api, options, loadPolicyOption(options.policy)));
   process.stdout.write(result.text + "\n");
   process.exitCode = result.isError ? 1 : 0;
@@ -905,7 +916,10 @@ async function generateAction(specs: string[], rawOptions: any, command: Command
 }
 
 async function diffAction(oldSpec: string, newSpec: string): Promise<void> {
-  const result = diffSpecs(await loadDocument(oldSpec), await loadDocument(newSpec));
+  let oldDoc: any, newDoc: any;
+  try { oldDoc = await loadDocument(oldSpec); } catch (err) { fatal(`could not load spec "${oldSpec}": ${err instanceof Error ? err.message : String(err)}`); }
+  try { newDoc = await loadDocument(newSpec); } catch (err) { fatal(`could not load spec "${newSpec}": ${err instanceof Error ? err.message : String(err)}`); }
+  const result = diffSpecs(oldDoc, newDoc);
   process.stdout.write(`breaking:     ${result.breaking.length}\n`);
   for (const change of result.breaking) process.stdout.write(`  ✗ [${change.kind}] ${change.method ?? ""} ${change.path ?? ""} — ${change.detail}\n`);
   process.stdout.write(`non-breaking: ${result.nonBreaking.length}\n`);
@@ -1074,6 +1088,7 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     metrics: options.metrics,
     oauthProvider: options.oauthProvider,
     pluginHooks: options.pluginInstances,
+    dispatcher: options.dispatcher,
     sigv4,
     budgetTracker: budget ? new BudgetTracker(budget) : undefined,
     responseMap: options.responseMap ? parseMapping(parseJsonFlag(options.responseMap, "--response-map")) : undefined,
@@ -1103,6 +1118,15 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     serverless: Boolean(options.serverless),
     structuredContent: Boolean(options.structuredContent)
   };
+}
+
+async function applyProxy(options: any): Promise<void> {
+  if (!options.ca && !options.proxy) return;
+  try {
+    options.dispatcher = await createDispatcher({ ca: options.ca, proxy: options.proxy });
+  } catch (err) {
+    fatal(err instanceof Error ? err.message : String(err));
+  }
 }
 
 async function applyPluginInstances(options: any): Promise<void> {

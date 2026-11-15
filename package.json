@@ -1,6 +1,6 @@
 {
   "name": "@asubilla/openapimcp",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Turn any OpenAPI/Swagger spec into an MCP server with one command.",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
-    "test:unit": "node --import tsx --test test/schema.test.ts test/filter.test.ts test/auth.test.ts test/policy.test.ts test/http.test.ts test/gateway.test.ts test/gateway-auth.test.ts test/oauth.test.ts test/discovery.test.ts test/cost.test.ts test/marketplace.test.ts test/context-budget.test.ts test/feedback.test.ts test/eval.test.ts test/memory.test.ts test/workflow.test.ts test/lint.test.ts test/sampling.test.ts test/a2a.test.ts test/serverless.test.ts test/streaming.test.ts test/semantic-cache.test.ts test/federation.test.ts test/webhook.test.ts test/compat.test.ts test/response-map.test.ts test/budget.test.ts test/presets.test.ts test/plugin-hooks.test.ts test/batch.test.ts test/proxy-tls.test.ts test/call-history.test.ts test/idempotency.test.ts test/spec-bundle.test.ts test/spec-pin.test.ts test/sigv4.test.ts test/deprecation.test.ts test/op-config.test.ts test/mcp-resources.test.ts test/production-defaults.test.ts test/tenant.test.ts test/elicitation.test.ts test/cancellation.test.ts test/progress.test.ts test/semantic.test.ts test/async-jobs.test.ts test/multipart.test.ts test/dry-run.test.ts test/env-profiles.test.ts test/redact-errors.test.ts test/config-validate.test.ts test/logger.test.ts test/audit.test.ts test/metrics.test.ts test/redact.test.ts test/sanitize.test.ts test/summarize.test.ts test/toolsearch.test.ts test/output.test.ts test/validate.test.ts test/ratelimit.test.ts test/cache.test.ts test/mock.test.ts test/diff.test.ts test/overlay.test.ts test/postman.test.ts test/completions.test.ts test/config.test.ts test/env.test.ts test/clientgen.test.ts test/testing.test.ts test/cli.test.ts",
+    "test:unit": "node --import tsx --test test/schema.test.ts test/filter.test.ts test/auth.test.ts test/policy.test.ts test/http.test.ts test/gateway.test.ts test/gateway-auth.test.ts test/oauth.test.ts test/discovery.test.ts test/cost.test.ts test/marketplace.test.ts test/context-budget.test.ts test/feedback.test.ts test/eval.test.ts test/memory.test.ts test/workflow.test.ts test/lint.test.ts test/sampling.test.ts test/a2a.test.ts test/serverless.test.ts test/streaming.test.ts test/semantic-cache.test.ts test/federation.test.ts test/webhook.test.ts test/compat.test.ts test/response-map.test.ts test/budget.test.ts test/presets.test.ts test/plugin-hooks.test.ts test/batch.test.ts test/proxy-tls.test.ts test/call-history.test.ts test/idempotency.test.ts test/spec-bundle.test.ts test/spec-pin.test.ts test/sigv4.test.ts test/deprecation.test.ts test/op-config.test.ts test/mcp-resources.test.ts test/production-defaults.test.ts test/tenant.test.ts test/elicitation.test.ts test/cancellation.test.ts test/progress.test.ts test/semantic.test.ts test/async-jobs.test.ts test/multipart.test.ts test/dry-run.test.ts test/env-profiles.test.ts test/redact-errors.test.ts test/config-validate.test.ts test/proxy-dispatcher.test.ts test/client-compat.test.ts test/action-sim.test.ts test/logger.test.ts test/audit.test.ts test/metrics.test.ts test/redact.test.ts test/sanitize.test.ts test/summarize.test.ts test/toolsearch.test.ts test/output.test.ts test/validate.test.ts test/ratelimit.test.ts test/cache.test.ts test/mock.test.ts test/diff.test.ts test/overlay.test.ts test/postman.test.ts test/completions.test.ts test/config.test.ts test/env.test.ts test/clientgen.test.ts test/testing.test.ts test/cli.test.ts",
     "test:e2e": "node test/smoke.mjs",
     "test": "npm run build && npm run test:unit && npm run test:e2e",
     "prepublishOnly": "npm run build",
@@ -57,5 +57,8 @@
     "@types/node": "^24.0.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.0"
+  },
+  "optionalDependencies": {
+    "undici": "^8.12.4"
   }
 }

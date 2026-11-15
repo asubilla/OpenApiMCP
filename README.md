@@ -243,6 +243,7 @@ openapimcp completions [shell]       # bash | zsh | fish | powershell
 `--config` `--dotenv` `--overlay` `--audit` `--log-json` `--tool-search` `--arg`
 `--print-config` `--hide-deprecated` `--idempotency` `--budget` `--response-map`
 `--history` `--plugin` `--sigv4` `--resources` `--preset` `--tenants` `--tenant` `--user-key`
+`--ca <file>` `--proxy <url>`
 
 Gateway: `--http` `--port` `--host` `--path` `--allowed-host` `--allowed-origin`.
 
@@ -263,6 +264,7 @@ openapimcp serve api.json --sigv4 us-east-1:execute-api   # AWS SigV4 (env: AWS_
 - **Tenant isolation** — `tenants.json` (`{"tenants": {...}}`) pins baseUrl, headers, policy and read-only per tenant, with per-user credential overrides (`users.<key>`). User creds win over tenant creds.
 - **Plugins** — a plugin is a module exporting `hooks: [{ name, beforeRequest?, afterResponse? }]` (or a default-exported single hook). `beforeRequest(req)` may return headers to merge (use it for custom auth/signing); `afterResponse(req, res)` observes status/body.
 - **Response normalization** — `--response-map '{"pick":["id"],"drop":["secret"],"rename":{"id":"userId"}}'` reshapes JSON responses for the model.
+- **Corporate proxy / custom CA** — `--ca corp-root.pem --proxy http://proxy:3128` routes upstream calls through your proxy with your CA trusted (HTTPS is CONNECT-tunneled). Requires the optional `undici` package: `npm install undici`.
 - **Production checks** — starting the HTTP gateway with a non-loopback host, no auth, or no read-only/policy logs `ERROR`/`WARN` records with fixes.
 
 ## Auth from `securitySchemes`

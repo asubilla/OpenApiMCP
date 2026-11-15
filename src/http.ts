@@ -121,6 +121,8 @@ export interface RequestOptions {
   responseMap?: ResponseMapping;
   /** Append call records to this JSON-lines file (history + replay). */
   historyFile?: string;
+  /** undici dispatcher for corporate proxy / custom CA (created from --ca/--proxy). */
+  dispatcher?: unknown;
 }
 
 export interface ApiResult {
@@ -345,7 +347,13 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       const effectiveTimeoutMs = tool.opConfig?.timeoutMs ?? opts.timeoutMs;
       const effectiveRetries = tool.opConfig?.retries ?? opts.retries;
       const effectiveOpts = { ...opts, timeoutMs: effectiveTimeoutMs, retries: effectiveRetries };
-      const res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, effectiveOpts);
+      let res: Response;
+      try {
+        res = await fetchWithRetry(currentUrl, { method, headers, body: payload }, effectiveOpts);
+      } catch (err) {
+        const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : err instanceof Error ? err.message : String(err);
+        return finish({ text: `Request failed: ${cause}`, isError: true }, undefined, "network-error");
+      }
       lastResHeaders = Object.fromEntries(res.headers.entries());
       raw = await res.text();
       lastStatus = res.status;
@@ -364,7 +372,8 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
           if (statusUrl) {
             const poll = await pollUntilDone(
               async (u) => {
-                const r = await fetch(u, { headers: { accept: "application/json", ...headers } });
+                const pollFetch = opts.dispatcher ? await getUndiciFetch() : fetch;
+                const r = await pollFetch(u, { headers: { accept: "application/json", ...headers }, ...(opts.dispatcher ? ({ dispatcher: opts.dispatcher } as any) : {}) });
                 const body = await r.text();
                 return { status: r.status, body };
               },
@@ -454,6 +463,20 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   return finish({ text, isError: lastStatus >= 400, data: responseData }, lastStatus);
 }
 
+let undiciFetch: any;
+/** Lazily import the optional `undici` package and return its fetch (required for custom dispatchers). */
+async function getUndiciFetch(): Promise<typeof fetch> {
+  if (!undiciFetch) {
+    try {
+      const u = await import("undici");
+      undiciFetch = (u as any).fetch;
+    } catch {
+      throw new Error('--ca/--proxy need the optional "undici" package. Run: npm install undici');
+    }
+  }
+  return undiciFetch;
+}
+
 async function fetchWithRetry(
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string | Buffer },
@@ -461,13 +484,14 @@ async function fetchWithRetry(
 ): Promise<Response> {
   const retries = Math.max(0, opts.retries ?? 0);
   const baseDelay = opts.retryDelayMs ?? 300;
+  const reqFetch = opts.dispatcher ? await getUndiciFetch() : fetch;
   let attempt = 0;
 
   for (;;) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
     try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
+      const res = await reqFetch(url, { ...init, signal: controller.signal, ...(opts.dispatcher ? ({ dispatcher: opts.dispatcher } as any) : {}) });
       if ((res.status === 429 || res.status >= 500) && attempt < retries) {
         const retryAfter = Number(res.headers.get("retry-after"));
         await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : baseDelay * 2 ** attempt);

@@ -2,15 +2,15 @@
 # Copy this into your API repo's .github/workflows/ directory and adjust paths.
 #
 # What it does:
-#   1. Extracts the base branch's spec to /tmp/base-openapi.json
+#   1. Extracts the base branch's spec to /tmp/base-openapi.json (skips the diff
+#      on first-time specs, when the base branch has no spec yet)
 #   2. Runs `openapimcp diff <base> <head>`
-#   3. Fails the PR check if breaking changes are found
+#   3. Fails the PR check if breaking changes are found (diff exits 1)
 name: OpenAPI spec review
 on:
   pull_request:
     paths:
       - "openapi.json"
-      - "openapi.yaml"
 
 jobs:
   spec-review:
@@ -21,10 +21,17 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch base spec
+        id: base
         run: |
-          git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json || true
+          if git show "origin/${{ github.base_ref }}:openapi.json" > /tmp/base-openapi.json 2>/dev/null; then
+            echo "has_base=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_base=false" >> "$GITHUB_OUTPUT"
+            echo "No spec on base branch yet; skipping diff (first-time spec)."
+          fi
 
       - name: Diff base vs head
+        if: steps.base.outputs.has_base == 'true'
         uses: asubilla/OpenApiMCP@main
         with:
           spec: /tmp/base-openapi.json

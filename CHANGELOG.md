@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.12.0]
+
+### Added
+- **Corporate proxy / custom CA (wired for real)** — `--ca <pem>` and `--proxy <url>` now route every upstream request through an undici dispatcher (verified live: HTTPS via custom CA, HTTP and HTTPS-via-CONNECT through a local proxy). `undici` is an optional dependency; install it with `npm install undici` when needed.
+- **`--ca` / `--proxy` flags** on all runtime commands; a startup log line shows the active proxy plan (credentials masked).
+- **`openapimcp_gateway_info` metric** on the HTTP gateway `/metrics` (Prometheus build/version gauge).
+- **`test/client-compat.test.ts`** — MCP client compatibility matrix across stdio (default, `--tool-search`, `--structured-content`, `--resources`) and Streamable HTTP (healthz/metrics/initialize, 401-with/200-with `--gateway-key`).
+- **`test/action-sim.test.ts`** + diff fixtures — simulates the spec-review Action end-to-end (base vs breaking/additive specs; exit code 1/0 as the PR gate requires).
+- **`docs/aws-sigv4.md`** — what was verified (14 official suite vectors recomputed with OpenSSL) and what is not (live AWS calls need credentials).
+- **`docs/action-verification.md`** — the Action's fail gate, reproduction steps, and known limitations.
+- **SigV4 suite vectors** — 14 official vectors (from a mirror of the AWS SigV4 test suite) verified byte-for-byte; `canonicalUri` percent-triplet bug fixed; 21 tests.
+- **`--ca`/`--proxy` covered by `test/proxy-dispatcher.test.ts`**.
+
+### Fixed
+- **Any upstream fetch failure crashed the process** with a raw `TypeError: fetch failed` stack (TLS, DNS, refused connections). The CLI now reports `Request failed: <cause>` with exit code 1.
+
 ## [1.11.0]
 
 ### Added

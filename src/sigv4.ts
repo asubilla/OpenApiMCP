@@ -28,7 +28,14 @@ export function canonicalUri(path: string): string {
   if (path === "") return "/";
   return path
     .split("/")
-    .map((segment) => rfc3986Encode(segment))
+    .map((segment) =>
+      // Preserve already-valid pct-encoded triplets (e.g. %E1%88%B4 produced by
+      // `new URL().pathname`); encode everything else, including stray "%".
+      segment
+        .split(/(%[0-9A-Fa-f]{2})/g)
+        .map((part) => (/^%[0-9A-Fa-f]{2}$/.test(part) ? part : rfc3986Encode(part)))
+        .join("")
+    )
     .join("/");
 }
 
