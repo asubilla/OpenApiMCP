@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Real-spec corpus tests** — `test/corpus.test.ts` + `test/fixtures/corpus/`: three pinned real public specs (Swagger Petstore OpenAPI 3.0.4, httpbin Swagger 2.0, PokeAPI OpenAPI 3.1.0 YAML with cyclic `$ref`s) run offline; asserts loading, tool generation, and `compat`/`lint`/`pin`/`bundle` stability on cyclic graphs.
+- **`json-safe.ts`** — `stringifyCycles` / `stableStringifyCycles`; exported for library users.
+- **`test/json-safe.test.ts`**.
+- **README: Compatibility report section** with genuine `compat` output for the three corpus specs (Petstore 13/6, PokeAPI 51 partial (exotic `allOf`), httpbin 73/73), plus a "Real-spec corpus tests" section.
+
+### Fixed
+- **Four commands crashed on cyclic `$ref`s after `$ref`-deref** — `compat` (TypeError: circular structure), `pin` (crash), `lint` (stack overflow), `bundle` (heap OOM, 2 GB). `compat`/`pin` now use cycle-safe stringify; `lint` tracks visited nodes; `bundle` loads without eager `$ref`-dereferencing (`loadDocumentRaw`).
+
 ## [1.12.1]
 
 ### Fixed

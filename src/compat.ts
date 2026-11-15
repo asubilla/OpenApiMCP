@@ -1,3 +1,5 @@
+import { stringifyCycles } from "./json-safe.js";
+
 export interface CompatEntry {
   operationId: string;
   method: string;
@@ -35,7 +37,7 @@ export function analyzeSpecCompat(spec: any): CompatReport {
       }
 
       // Exotic schema constructs.
-      const raw = JSON.stringify(op);
+      const raw = stringifyCycles(op);
       for (const kw of ['"oneOf"', '"anyOf"', '"allOf"', '"not"', '"discriminator"', '"unevaluatedProperties"', '"x-nullable"']) {
         if (raw.includes(kw)) reasons.push(`exotic schema: ${kw.slice(1, -1)}`);
       }

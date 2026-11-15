@@ -61,6 +61,7 @@ export { API_PRESETS, getPreset, presetNames, formatPresetList, type ApiPreset }
 export { runBeforeRequest, runAfterResponse, validatePlugin, loadPlugin, type PluginHook, type HookRequest, type HookResponse } from "./plugin-hooks.js";
 export { runBatch, formatBatchResults, formatBatchSummary, type BatchCall, type BatchResult } from "./batch.js";
 export { buildProxyEnv, planProxyTls, formatProxyTls, type ProxyTlsOptions, type ProxyTlsPlan } from "./proxy-tls.js";
+export { stableStringifyCycles, stringifyCycles } from "./json-safe.js";
 
 // Wave C — more features
 export { createCallHistory, formatCallList, replayArgs, type CallRecord } from "./call-history.js";

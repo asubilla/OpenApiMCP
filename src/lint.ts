@@ -215,10 +215,13 @@ export function lintSpec(spec: any): LintResult {
   return { issues, score, summary: { errors, warnings, infos } };
 }
 
-function walkSchemas(node: any, path: string, issues: LintIssue[]): void {
+function walkSchemas(node: any, path: string, issues: LintIssue[], seen?: Set<object>): void {
+  seen = seen ?? new Set<object>();
   if (!node || typeof node !== "object") return;
+  if (seen.has(node)) return;
+  seen.add(node);
   if (Array.isArray(node)) {
-    node.forEach((item, index) => walkSchemas(item, `${path}[${index}]`, issues));
+    node.forEach((item, index) => walkSchemas(item, `${path}[${index}]`, issues, seen));
     return;
   }
 
@@ -238,27 +241,27 @@ function walkSchemas(node: any, path: string, issues: LintIssue[]): void {
         );
       }
       // recurse into property schema
-      walkSchemas(prop, propPath, issues);
+      walkSchemas(prop, propPath, issues, seen);
     }
   }
 
   // additionalProperties
   if (isPlainObject(node.additionalProperties)) {
     const apPath = path ? `${path}.additionalProperties` : "additionalProperties";
-    walkSchemas(node.additionalProperties, apPath, issues);
+    walkSchemas(node.additionalProperties, apPath, issues, seen);
   }
 
   // items
   if (isPlainObject(node.items) || Array.isArray(node.items)) {
     const itemsPath = path ? `${path}.items` : "items";
-    walkSchemas(node.items, itemsPath, issues);
+    walkSchemas(node.items, itemsPath, issues, seen);
   }
 
   // allOf/anyOf/oneOf
   for (const combo of ["allOf", "anyOf", "oneOf"]) {
     if (Array.isArray(node[combo])) {
       node[combo].forEach((s: any, index: number) => {
-        walkSchemas(s, `${path}.${combo}[${index}]`, issues);
+        walkSchemas(s, `${path}.${combo}[${index}]`, issues, seen);
       });
     }
   }
@@ -269,7 +272,7 @@ function walkSchemas(node: any, path: string, issues: LintIssue[]): void {
     if (key === "properties" || key === "items" || key === "additionalProperties") continue;
     if (key === "allOf" || key === "anyOf" || key === "oneOf") continue;
     const childPath = path ? `${path}.${key}` : key;
-    walkSchemas(value, childPath, issues);
+    walkSchemas(value, childPath, issues, seen);
   }
 }
 

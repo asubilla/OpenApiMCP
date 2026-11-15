@@ -203,6 +203,69 @@ Each operation is also exposed as an MCP **prompt** (`<tool>_help`) so agents
 can ask "how do I use this?" and get a parameter summary. Prompts carry the
 same descriptions, which now include any `example`/`examples` from the spec.
 
+## Compatibility report
+
+`openapimcp compat <spec>` tells you which operations work out of the box —
+before you wire an agent to your API:
+
+- **supported** — no concerns.
+- **partial** — works, with notes (e.g. `oneOf`/`allOf` schemas — passed through, just flagged).
+- **unsupported** — cannot be faithfully called (e.g. XML / form-encoded / octet-stream bodies, callbacks, required header/cookie params, deprecated ops).
+
+Real output — [Swagger Petstore](https://petstore3.swagger.io/api/v3/openapi.json) (OpenAPI 3.0.4):
+
+```
+openapimcp compatibility report
+  supported:   13
+  partial:     0
+  unsupported: 6
+  total:       19
+
+✗ addPet (POST /pet) — non-JSON body: application/xml, non-JSON body: application/x-www-form-urlencoded
+✓ getPetById (GET /pet/{petId})
+✓ deletePet (DELETE /pet/{petId})
+✗ uploadFile (POST /pet/{petId}/uploadImage) — non-JSON body: application/octet-stream
+```
+
+Real output — [PokeAPI](https://pokeapi.co) (OpenAPI **3.1.0**, YAML, cyclic `$ref`s):
+
+```
+  supported:   51
+  partial:     51
+  unsupported: 0
+  total:       102
+
+~ ability_retrieve (GET /api/v2/ability/{id}/) — exotic schema: allOf
+```
+
+Real output — [httpbin.org](https://httpbin.org) (**Swagger 2.0**):
+
+```
+  supported:   73
+  partial:     0
+  unsupported: 0
+  total:       73
+```
+
+## Real-spec corpus tests
+
+`compat` is only trustworthy if it survives real-world specs — including
+self-referencing `$ref`s, YAML, Swagger 2.0 and non-JSON bodies. Three real
+public specs are vendored into the repo as regression fixtures
+(`test/fixtures/corpus/`), and `test/corpus.test.ts` runs against them
+**offline** (no network needed):
+
+| Spec | Format | Paths | Why it's in the corpus |
+|---|---|---|---|
+| [Swagger Petstore](https://petstore3.swagger.io/api/v3/openapi.json) | OpenAPI 3.0.4 | 13 (19 operations) | non-JSON bodies; pins the exact `compat` verdicts |
+| [httpbin.org](https://httpbin.org/spec.json) | **Swagger 2.0** | 52 (73 operations) | legacy `securityDefinitions` path |
+| [PokeAPI](https://raw.githubusercontent.com/PokeAPI/pokeapi/master/openapi.yml) | OpenAPI **3.1.0**, YAML | cyclic | self-referential schemas (evolution chains) that once crashed `compat`/`pin`/`lint`/`bundle` |
+
+The corpus test asserts: each spec loads, tools are generated, and `compat`,
+`lint`, `pin`, `bundle` all stay stable on the cyclic 2026-era PokeAPI graph.
+Refreshing the snapshots and their licenses:
+[`test/fixtures/corpus/README.md`](test/fixtures/corpus/README.md).
+
 ## Commands
 
 ```

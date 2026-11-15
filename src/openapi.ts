@@ -15,6 +15,13 @@ export async function loadDocument(specPath: string): Promise<any> {
   return SwaggerParser.dereference(specPath);
 }
 
+/** Load WITHOUT dereferencing (keeps cyclic `$ref` graphs finite; for `bundle`). */
+export async function loadDocumentRaw(specPath: string): Promise<any> {
+  const mod: any = await import("@apidevtools/swagger-parser");
+  const SwaggerParser = mod.default ?? mod;
+  return SwaggerParser.parse(specPath);
+}
+
 /** Turn an already-dereferenced document into tool definitions. */
 export function parseDocument(api: any, options: ParseOptions = {}): ParsedApi {
   const env = options.env ?? process.env;

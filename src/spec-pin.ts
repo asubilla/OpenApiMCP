@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { stableStringifyCycles } from "./json-safe.js";
 
 export interface SpecPin {
   url: string;
@@ -31,26 +32,8 @@ export function verifyPin(pin: SpecPin, rawContent: string | Buffer): { valid: b
   return { valid: false, reason: "hash-mismatch" };
 }
 
-function stableStringify(value: unknown): string {
-  if (value === undefined) {
-    return "null";
-  }
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? "null";
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  const body = keys
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",");
-  return `{${body}}`;
-}
-
 export function pinFromSpec(url: string, spec: any): SpecPin {
-  const content = stableStringify(spec);
+  const content = stableStringifyCycles(spec);
   const pin = createPin(url, content, { version: spec?.info?.version });
   return pin;
 }

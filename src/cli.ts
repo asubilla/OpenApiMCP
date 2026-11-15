@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { loadDocument, parseDocument } from "./openapi.js";
+import { loadDocument, loadDocumentRaw, parseDocument } from "./openapi.js";
 import { buildServer } from "./server.js";
 import { callApi, type RequestOptions } from "./http.js";
 import { substituteEnv } from "./auth.js";
@@ -526,7 +526,7 @@ program
   .option("--out <file>", "Write bundled spec to a file (default: stdout)")
   .option("--timeout <ms>", "Fetch timeout in milliseconds", "10000")
   .action(async (spec: string, options: { out?: string; timeout: string }) => {
-    const doc = await loadDocument(spec);
+    const doc = await loadDocumentRaw(spec);
     const bundled = await bundleDocument(doc, async (url) => (await fetch(url)).json(), { timeoutMs: Number(options.timeout) || 10000 });
     const text = JSON.stringify(bundled, null, 2) + "\n";
     if (options.out) {
