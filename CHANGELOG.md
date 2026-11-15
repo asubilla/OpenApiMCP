@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.13.0]
 
 ### Added
 - **Real-spec corpus tests** — `test/corpus.test.ts` + `test/fixtures/corpus/`: three pinned real public specs (Swagger Petstore OpenAPI 3.0.4, httpbin Swagger 2.0, PokeAPI OpenAPI 3.1.0 YAML with cyclic `$ref`s) run offline; asserts loading, tool generation, and `compat`/`lint`/`pin`/`bundle` stability on cyclic graphs.
