@@ -10,6 +10,8 @@ export interface BuildServerOptions extends RequestOptions {
   version?: string;
   /** Expose only `search_tools` + `call_tool` for very large APIs (progressive disclosure). */
   toolSearch?: boolean;
+  /** Return parsed JSON in `structuredContent` for typed client consumption. */
+  structuredContent?: boolean;
 }
 
 /** Build an MCP server that exposes one tool per OpenAPI operation. */
@@ -52,7 +54,11 @@ export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer
         }
         try {
           const result = await callApi(tool, (args as Record<string, any>) ?? {}, opts);
-          return { content: [{ type: "text" as const, text: result.text }], isError: result.isError };
+          const out: any = { content: [{ type: "text" as const, text: result.text }], isError: result.isError };
+          if (opts.structuredContent && result.data !== undefined && typeof result.data === "object") {
+            out.structuredContent = result.data;
+          }
+          return out;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return { content: [{ type: "text" as const, text: `Request failed: ${message}` }], isError: true };
@@ -105,7 +111,11 @@ export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer
       async (args: Record<string, unknown>) => {
         try {
           const result = await callApi(tool, args, opts);
-          return { content: [{ type: "text" as const, text: result.text }], isError: result.isError };
+          const out: any = { content: [{ type: "text" as const, text: result.text }], isError: result.isError };
+          if (opts.structuredContent && result.data !== undefined && typeof result.data === "object") {
+            out.structuredContent = result.data;
+          }
+          return out;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return { content: [{ type: "text" as const, text: `Request failed: ${message}` }], isError: true };

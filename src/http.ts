@@ -99,6 +99,8 @@ export interface RequestOptions {
 export interface ApiResult {
   text: string;
   isError: boolean;
+  /** Parsed + filtered response body (available when the upstream returned JSON). */
+  data?: unknown;
 }
 
 interface CacheEntry {
@@ -286,11 +288,15 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   }
 
   let rendered: string;
+  let responseData: unknown = undefined;
   if (opts.paginate && parsed.some((p) => p !== undefined)) {
     let data = collectPages(parsed.filter((p) => p !== undefined));
     if (opts.fields && opts.fields.length) data = filterFields(data, opts.fields);
+    responseData = data;
     rendered = JSON.stringify(data, null, 2);
   } else {
+    try { responseData = JSON.parse(bodies[0] ?? ""); } catch { responseData = undefined; }
+    if (opts.fields && opts.fields.length) responseData = filterFields(responseData, opts.fields);
     rendered = renderBody(bodies[0] ?? "", opts.fields);
   }
 
@@ -301,6 +307,7 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       let data: any = JSON.parse(rendered);
       if (opts.summarize) data = summarizeJson(data, opts.summarize);
       if (opts.redact) data = redact(data);
+      responseData = data;
       rendered = JSON.stringify(data, null, 2);
     } catch {
       /* non-JSON body: leave as-is */
@@ -314,7 +321,7 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   const pageNote = bodies.length > 1 ? `  (${bodies.length} pages)` : "";
   const text = [`${method} ${url}`, `HTTP ${lastStatus} ${lastStatusText}`.trimEnd() + pageNote, "", rendered].join("\n");
 
-  return finish({ text, isError: lastStatus >= 400 }, lastStatus);
+  return finish({ text, isError: lastStatus >= 400, data: responseData }, lastStatus);
 }
 
 async function fetchWithRetry(

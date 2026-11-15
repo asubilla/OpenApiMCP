@@ -24,6 +24,7 @@ import { formatToolDetail, formatToolList } from "./toolkit.js";
 import { loadConfig, mergeConfig, type Config } from "./config.js";
 import { applyDotenv } from "./env.js";
 import { completionsFor } from "./completions.js";
+import { analyzeSpecCompat, formatCompatReport } from "./compat.js";
 import { runSetup } from "./setup.js";
 import { Metrics } from "./metrics.js";
 import { rankTools } from "./toolsearch.js";
@@ -44,7 +45,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.7.1";
+const VERSION = "1.7.2";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -99,6 +100,7 @@ const runtimeFlags = (cmd: Command) =>
     .option("--tamper-audit <file>", "Append a tamper-evident (hash-chained) audit log")
     .option("--webhook-url <url>", "POST a webhook on every tool call")
     .option("--webhook-events <events...>", "Webhook events to trigger (default: tool.call)")
+    .option("--structured-content", "Return parsed JSON in structuredContent for typed client consumption")
     .option("--secrets-provider <spec>", "Secrets source: env | file:<path>")
     .option("--feedback-file <file>", "Record tool usage feedback")
     .option("--gateway-key <key>", "Require X-API-Key header on the HTTP gateway")
@@ -383,6 +385,20 @@ program
   });
 
 program
+  .command("compat")
+  .description("Report which operations are fully/partially/unsupported by openapimcp")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .option("--overlay <file>", "OpenAPI Overlay (JSON) applied before parsing")
+  .option("--json", "Print JSON instead of text")
+  .action(async (spec: string, options: { overlay?: string; json?: boolean }) => {
+    const base = await loadDocument(spec);
+    const doc = options.overlay ? applyOverlay(base, readJson(options.overlay)) : base;
+    const report = analyzeSpecCompat(doc);
+    if (options.json) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    else process.stdout.write(formatCompatReport(report) + "\n");
+  });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -461,7 +477,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
   }
 
   const createServer = () =>
-    buildServer({ ...api, tools }, { serverName, version: VERSION, toolSearch: Boolean(options.toolSearch), ...requestOpts });
+    buildServer({ ...api, tools }, { serverName, version: VERSION, toolSearch: Boolean(options.toolSearch), structuredContent: Boolean(options.structuredContent), ...requestOpts });
 
   if (options.http) {
     await startGateway({
@@ -505,6 +521,7 @@ async function doctorAction(specs: string[], options: any): Promise<void> {
 
   for (const spec of specs) {
     const api = await loadSpec(spec, options.overlay);
+    const doc = options.overlay ? applyOverlay(await loadDocument(spec), readJson(options.overlay)) : await loadDocument(spec);
     const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
     write(`✓ spec loaded: ${api.title} v${api.version}`);
     write(`  tools:      ${api.tools.length}`);
@@ -512,6 +529,11 @@ async function doctorAction(specs: string[], options: any): Promise<void> {
     write(`  auth:       ${api.schemesWithCreds.length} ready, ${api.schemesWithoutCreds.length} missing credentials`);
     for (const name of api.schemesWithCreds) write(`    ✓ ${name}`);
     for (const name of api.schemesWithoutCreds) write(`    ✗ ${name}  ->  set OPENAPIMCP_${name.toUpperCase()}`);
+    const compat = analyzeSpecCompat(doc);
+    write(`  compat:     ${compat.summary.supported} supported, ${compat.summary.partial} partial, ${compat.summary.unsupported} unsupported`);
+    for (const e of compat.entries.filter((x) => x.status === "unsupported")) {
+      write(`    ✗ ${e.operationId} — ${e.reasons.join(", ")}`);
+    }
     if (baseUrl) {
       try {
         const controller = new AbortController();
@@ -1024,7 +1046,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

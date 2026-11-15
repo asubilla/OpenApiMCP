@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.2]
+
+### Added
+- **`structuredContent`** — tool results now include typed parsed JSON when `--structured-content` is set.
+- **`compat`** — `openapimcp compat <spec>` reports fully/partially/unsupported operations.
+- `doctor` now prints compatibility summary.
+
+### Docs
+- `docs/production.md` — Docker Compose, nginx + TLS, secrets, CI, policy baseline, monitoring.
+
 ## [1.5.0]
 
 ### Added

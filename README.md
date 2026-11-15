@@ -216,6 +216,7 @@ openapimcp smoke <spec> [--out f]    # generate a node:test smoke suite
 openapimcp postman <collection>      # list operations in a Postman collection
 openapimcp discover <domain>         # auto-discover an OpenAPI spec from a domain
 openapimcp lint <spec>              # lint a spec for quality issues
+openapimcp compat <spec>            # report fully/partially/unsupported operations
 openapimcp marketplace [query]       # browse 2000+ public APIs on APIs.guru
 openapimcp init <spec>              # write an MCP client config entry
 openapimcp use <spec>               # save a default spec
@@ -293,6 +294,11 @@ cd my-mcp && npm install && npm start
 openapimcp client ./openapi.json --out ./client   # typed TS fetch client
 openapimcp smoke ./openapi.json --out ./smoke.test.ts
 ```
+
+## Production deployment
+
+See [docs/production.md](docs/production.md) — Docker Compose, nginx + TLS, secrets,
+CI examples, policy baseline, and monitoring.
 
 ## Docker & Kubernetes
 
