@@ -32,9 +32,12 @@ import { searchApisGuru, getSpecFromApisGuru, formatMarketplaceList } from "./ma
 import { lintSpec, formatLint } from "./lint.js";
 import { OAuth2TokenProvider, parseOAuth2Config } from "./oauth.js";
 import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
+import { evaluateToolSelection, formatEvalReport } from "./eval.js";
+import { createMemory } from "./memory.js";
+import { parseGraphQLSchema, graphqlToToolName, buildGraphQLQuery } from "./graphql.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -82,6 +85,7 @@ const runtimeFlags = (cmd: Command) =>
     .option("--breaker", "Enable an upstream circuit breaker")
     .option("--tool-search", "Expose search_tools + call_tool instead of every operation")
     .option("--arg <kv...>", "Arguments as key=value (repeatable), e.g. --arg status=available")
+    .option("--watch", "Watch the spec file and exit on change (for use with a process manager)")
     .option("--gateway-key <key>", "Require X-API-Key header on the HTTP gateway")
     .option("--gateway-jwt-secret <secret>", "Require a signed JWT (HS256) on the HTTP gateway")
     .option("--gateway-jwt-issuer <iss>", "Expected JWT issuer")
@@ -269,6 +273,69 @@ program
   });
 
 program
+  .command("eval")
+  .description("Evaluate tool selection accuracy against test cases")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .argument("<cases>", "JSON file with [{query, expectedTool}]")
+  .option("--overlay <file>", "OpenAPI Overlay (JSON) applied before parsing")
+  .action(async (spec: string, cases: string, options: { overlay?: string }) => {
+    const api = await loadSpec(spec, options.overlay);
+    let testCases: { query: string; expectedTool: string }[];
+    try {
+      testCases = JSON.parse(readFileSync(cases, "utf8"));
+    } catch (err) {
+      fatal(`could not read cases "${cases}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const report = evaluateToolSelection(api.tools, testCases);
+    process.stdout.write(formatEvalReport(report) + "\n");
+    process.exitCode = report.accuracy < 1 ? 1 : 0;
+  });
+
+program
+  .command("memory")
+  .description("Browse or search agent memory")
+  .argument("<file>", "Memory file path")
+  .option("--search <query>", "Search query")
+  .option("--add <kv...>", "Add entries as key=value (repeatable)")
+  .option("--clear", "Clear all memory")
+  .action((file: string, options: { search?: string; add?: string[]; clear?: boolean }) => {
+    const mem = createMemory(file);
+    if (options.clear) { mem.clear(); process.stdout.write("✓ memory cleared\n"); return; }
+    if (options.add?.length) {
+      for (const kv of options.add) {
+        const idx = kv.indexOf("=");
+        if (idx === -1) { fatal(`--add "${kv}" must be key=value`); }
+        const key = kv.slice(0, idx).trim();
+        const value = kv.slice(idx + 1);
+        const id = mem.add(key, value);
+        process.stdout.write(`✓ added ${key} (${id})\n`);
+      }
+      return;
+    }
+    if (options.search) {
+      const results = mem.search(options.search);
+      process.stdout.write(JSON.stringify(results, null, 2) + "\n");
+      return;
+    }
+    process.stdout.write(JSON.stringify(mem.list(), null, 2) + "\n");
+  });
+
+program
+  .command("graphql")
+  .description("Convert a GraphQL SDL file to MCP tool definitions (preview)")
+  .argument("<sdl>", "Path to a GraphQL SDL file")
+  .option("--json", "Print JSON")
+  .action((sdl: string, options: { json?: boolean }) => {
+    const ops = parseGraphQLSchema(readFileSync(sdl, "utf8"));
+    if (options.json) {
+      process.stdout.write(JSON.stringify(ops, null, 2) + "\n");
+      return;
+    }
+    for (const op of ops) process.stdout.write(`${graphqlToToolName(op)}\t${op.type} ${op.name}\n`);
+    process.stderr.write(`\n${ops.length} operation(s)\n`);
+  });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -318,6 +385,18 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
     if (options.fields) args.push("--fields", options.fields);
     process.stdout.write(JSON.stringify({ mcpServers: { [serverName]: { command: "npx", args } } }, null, 2) + "\n");
     return;
+  }
+
+  if (options.watch) {
+    const watchable = specs.filter((s) => existsSync(s));
+    if (watchable.length === 0) log.warn("no local spec files to watch");
+    for (const specPath of watchable) {
+      const { watch } = await import("node:fs");
+      watch(specPath, { persistent: true }, () => {
+        log.info("spec changed, exiting for reload", { spec: specPath });
+        process.exit(0);
+      });
+    }
   }
 
   const createServer = () =>
@@ -867,7 +946,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

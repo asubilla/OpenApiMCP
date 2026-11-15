@@ -1,6 +1,6 @@
 {
   "name": "@asubilla/openapimcp",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Turn any OpenAPI/Swagger spec into an MCP server with one command.",
   "type": "module",
   "main": "./dist/index.js",
