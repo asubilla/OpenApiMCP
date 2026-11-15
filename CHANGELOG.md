@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1]
+
+### Fixed
+- `postinstall` no longer references a compiled file that doesn't exist during `npm ci` (moved to `scripts/postinstall.js`). Fixes install failures on CI and Docker.
+
 ## [1.3.0]
 
 ### Added

@@ -27,9 +27,12 @@ import { completionsFor } from "./completions.js";
 import { runSetup } from "./setup.js";
 import { Metrics } from "./metrics.js";
 import { rankTools } from "./toolsearch.js";
+import { discoverSpec } from "./discovery.js";
+import { OAuth2TokenProvider, parseOAuth2Config } from "./oauth.js";
+import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.3.1";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -76,7 +79,17 @@ const runtimeFlags = (cmd: Command) =>
     .option("--rate-limit <n>", "Max upstream requests per second (client-side)")
     .option("--breaker", "Enable an upstream circuit breaker")
     .option("--tool-search", "Expose search_tools + call_tool instead of every operation")
-    .option("--arg <kv...>", "Arguments as key=value (repeatable), e.g. --arg status=available");
+    .option("--arg <kv...>", "Arguments as key=value (repeatable), e.g. --arg status=available")
+    .option("--gateway-key <key>", "Require X-API-Key header on the HTTP gateway")
+    .option("--gateway-jwt-secret <secret>", "Require a signed JWT (HS256) on the HTTP gateway")
+    .option("--gateway-jwt-issuer <iss>", "Expected JWT issuer")
+    .option("--gateway-jwt-audience <aud>", "Expected JWT audience")
+    .option("--cost-log <file>", "Append a JSON-lines cost log of every tool call")
+    .option("--cost-model <model>", "Model used for cost estimation", "gpt-4o-mini")
+    .option("--oauth2-token-url <url>", "OAuth2 token endpoint (client-credentials)")
+    .option("--oauth2-client-id <id>", "OAuth2 client id")
+    .option("--oauth2-client-secret <secret>", "OAuth2 client secret")
+    .option("--oauth2-scope <scope>", "OAuth2 scope");
 
 runtimeFlags(
   httpFlags(filterFlags(program.command("serve")))
@@ -209,6 +222,19 @@ program
   .action(runAction);
 
 program
+  .command("discover")
+  .description("Auto-discover an OpenAPI spec from a domain")
+  .argument("<input>", "Domain or URL (e.g. example.com or https://api.example.com)")
+  .option("--json", "Print the spec as JSON")
+  .action(async (input: string, options: { json?: boolean }) => {
+    const found = await discoverSpec(input);
+    if (!found) fatal(`no OpenAPI spec found for "${input}"`);
+    process.stderr.write(`✓ found spec at ${found.url}\n`);
+    if (options.json) process.stdout.write(JSON.stringify(found.spec, null, 2) + "\n");
+    else process.stdout.write(found.url + "\n");
+  });
+
+program
   .command("completions")
   .description("Print a shell completion script")
   .argument("[shell]", "bash | zsh | fish | powershell")
@@ -229,6 +255,23 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
 
   const metrics = options.http ? new Metrics() : undefined;
   if (metrics) options.metrics = metrics;
+
+  const gatewayAuth: GatewayAuthConfig | undefined =
+    options.gatewayKey || options.gatewayJwtSecret
+      ? { apiKey: options.gatewayKey, jwtSecret: options.gatewayJwtSecret, jwtIssuer: options.gatewayJwtIssuer, jwtAudience: options.gatewayJwtAudience }
+      : undefined;
+
+  let oauthProvider: OAuth2TokenProvider | undefined;
+  if (options.oauth2TokenUrl && options.oauth2ClientId && options.oauth2ClientSecret) {
+    oauthProvider = new OAuth2TokenProvider({ tokenUrl: options.oauth2TokenUrl, clientId: options.oauth2ClientId, clientSecret: options.oauth2ClientSecret, scope: options.oauth2Scope });
+  } else {
+    for (const scheme of Object.values(api.securitySchemes ?? {})) {
+      const cfg = parseOAuth2Config(scheme);
+      if (cfg) { oauthProvider = new OAuth2TokenProvider(cfg); break; }
+    }
+  }
+  options.oauthProvider = oauthProvider;
+
   const requestOpts = requestOptions(api, options, policy);
   const serverName = options.name ?? slug(api.title);
   const baseUrl = options.baseUrl ?? api.baseUrls[0] ?? "";
@@ -254,6 +297,7 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
       allowedHosts: options.allowedHost,
       allowedOrigins: options.allowedOrigin,
       serverName,
+      auth: gatewayAuth,
       createServer,
       metrics,
       onListening: (url) => log.info("gateway listening", { url, tools: tools.length })
@@ -329,7 +373,16 @@ async function callAction(positional: string[] | undefined, rawOptions: any, com
   if (!toolName) program.help({ error: true });
   spec = resolveSpec(spec);
   const options = withConfig(command, rawOptions);
+  if (!options.oauthProvider && options.oauth2TokenUrl && options.oauth2ClientId && options.oauth2ClientSecret) {
+    options.oauthProvider = new OAuth2TokenProvider({ tokenUrl: options.oauth2TokenUrl, clientId: options.oauth2ClientId, clientSecret: options.oauth2ClientSecret, scope: options.oauth2Scope });
+  }
   const api = await loadSpec(spec!, options.overlay);
+  if (!options.oauthProvider) {
+    for (const scheme of Object.values(api.securitySchemes ?? {})) {
+      const cfg = parseOAuth2Config(scheme);
+      if (cfg) { options.oauthProvider = new OAuth2TokenProvider(cfg); break; }
+    }
+  }
   const tool = api.tools.find((t) => t.name === toolName);
   if (!tool) fatal(`tool "${toolName}" not found. Run: openapimcp list ${spec}`);
 
@@ -341,6 +394,9 @@ async function callAction(positional: string[] | undefined, rawOptions: any, com
 
 async function runAction(positional: string[], rawOptions: any, command: Command): Promise<void> {
   const options = withConfig(command, rawOptions);
+  if (!options.oauthProvider && options.oauth2TokenUrl && options.oauth2ClientId && options.oauth2ClientSecret) {
+    options.oauthProvider = new OAuth2TokenProvider({ tokenUrl: options.oauth2TokenUrl, clientId: options.oauth2ClientId, clientSecret: options.oauth2ClientSecret, scope: options.oauth2Scope });
+  }
   let spec: string | undefined = options.spec;
   const rest = [...(positional ?? [])];
   if (!spec && rest.length && isSpecArg(rest[0])) spec = rest.shift();
@@ -348,6 +404,12 @@ async function runAction(positional: string[], rawOptions: any, command: Command
   const task = rest.join(" ").trim();
 
   const api = await loadSpec(spec, options.overlay);
+  if (!options.oauthProvider) {
+    for (const scheme of Object.values(api.securitySchemes ?? {})) {
+      const cfg = parseOAuth2Config(scheme);
+      if (cfg) { options.oauthProvider = new OAuth2TokenProvider(cfg); break; }
+    }
+  }
   if (!task) {
     process.stdout.write(formatToolList(api.tools) + "\n");
     return;
@@ -556,7 +618,10 @@ function requestOptions(_api: ParsedApi, options: any, policy?: Policy): Request
     breaker: options.breaker ? new CircuitBreaker() : undefined,
     diskCache: options.cacheDir ? new DiskCache(options.cacheDir) : undefined,
     audit: options.audit ? createAuditLog(options.audit) : undefined,
-    metrics: options.metrics
+    metrics: options.metrics,
+    oauthProvider: options.oauthProvider,
+    costLog: options.costLog,
+    costModel: options.costModel
   };
 }
 
@@ -768,7 +833,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "completions", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

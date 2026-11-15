@@ -1,7 +1,12 @@
 import type { ToolDef } from "./types.js";
 import { filterFields } from "./filter.js";
 import { checkRequest, type Policy } from "./policy.js";
+import type { OAuth2TokenProvider } from "./oauth.js";
 import { recordToolCall } from "./telemetry.js";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { estimateTokens } from "./cost.js";
+import type { CostTracker } from "./cost.js";
 import { redact } from "./redact.js";
 import { summarizeJson, type SummarizeOptions } from "./summarize.js";
 import { cacheKey, type DiskCache } from "./cache.js";
@@ -45,6 +50,14 @@ export interface RequestOptions {
   audit?: AuditLog;
   /** Prometheus metrics sink. */
   metrics?: Metrics;
+  /** OAuth2 token provider for upstream API auth. */
+  oauthProvider?: OAuth2TokenProvider;
+  /** Cost tracker for LLM token economics. */
+  costTracker?: CostTracker;
+  /** Model name used for cost estimation. */
+  costModel?: string;
+  /** Path to append a JSON-lines cost log. */
+  costLog?: string;
 }
 
 export interface ApiResult {
@@ -104,12 +117,29 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
   const qs = query.toString();
   const url = `${base}${path}${qs ? `?${qs}` : ""}`;
 
+  let responseText = "";
   const finish = (result: ApiResult, status?: number, reason?: string): ApiResult => {
     const durationMs = Date.now() - started;
     const ok = !result.isError;
     opts.metrics?.counter("openapimcp_tool_calls_total", { tool: tool.name, method, ok: String(ok) });
     opts.metrics?.observe("openapimcp_tool_duration_ms", durationMs, { tool: tool.name, method });
     opts.audit?.write({ time: new Date().toISOString(), tool: tool.name, method, url, status, ok, durationMs, reason });
+    if (opts.costTracker) {
+      opts.costTracker.record({
+        tool: tool.name,
+        model: opts.costModel ?? "gpt-4o-mini",
+        inputTokens: estimateTokens(`${method} ${url} ${payload ?? ""} ${JSON.stringify(args)}`),
+        outputTokens: estimateTokens(responseText),
+        time: new Date().toISOString()
+      });
+    }
+    if (opts.costLog) {
+      try {
+        const entry = { time: new Date().toISOString(), tool: tool.name, method, model: opts.costModel ?? "gpt-4o-mini", inputTokens: estimateTokens(`${method} ${url} ${payload ?? ""} ${JSON.stringify(args)}`), outputTokens: estimateTokens(responseText), costUsd: 0 };
+        mkdirSync(dirname(opts.costLog), { recursive: true });
+        appendFileSync(opts.costLog, JSON.stringify(entry) + "\\n");
+      } catch { /* ignore */ }
+    }
     return result;
   };
 
@@ -151,6 +181,13 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
       lastStatusText = entry.statusText;
       link = entry.link;
     } else {
+      if (page === 0 && opts.oauthProvider && !headers.authorization) {
+        try {
+          headers.authorization = `Bearer ${await opts.oauthProvider.getToken()}`;
+        } catch (err) {
+          return finish({ text: `OAuth token fetch failed: ${err instanceof Error ? err.message : String(err)}`, isError: true }, undefined, "oauth-error");
+        }
+      }
       if (opts.breaker && !opts.breaker.canRequest()) {
         return finish({ text: "Blocked by circuit breaker: upstream marked unhealthy", isError: true }, undefined, "circuit-open");
       }
@@ -173,6 +210,7 @@ async function callApiInner(tool: ToolDef, args: Record<string, any>, opts: Requ
     }
 
     bodies.push(raw);
+    responseText = raw;
     if (opts.paginate && lastStatus < 400) {
       try {
         parsed.push(JSON.parse(raw));

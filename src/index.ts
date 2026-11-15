@@ -12,6 +12,8 @@ export { portalHtml } from "./portal.js";
 // Security & policy
 export { loadPolicy, toolAllowed, hostAllowed, checkRequest } from "./policy.js";
 export type { Policy } from "./policy.js";
+export { authenticateRequest, authMiddleware, createJwt, validateApiKey, verifyJwt, type AuthResult, type GatewayAuthConfig } from "./gateway-auth.js";
+export { OAuth2TokenProvider, parseOAuth2Config, buildTokenRequest, type OAuth2Config, type TokenResponse } from "./oauth.js";
 export { redact, redactText, type RedactOptions } from "./redact.js";
 export { stripControlChars, wrapUntrusted, isUntrusted } from "./sanitize.js";
 export { summarizeJson, type SummarizeOptions } from "./summarize.js";
@@ -35,6 +37,13 @@ export { resolveToolSecurity, schemeAuth, substituteEnv, envKey } from "./auth.j
 export { rankTools, describeProgressiveTools, TOOL_SEARCH_NAME, TOOL_CALL_NAME } from "./toolsearch.js";
 export { toOutputSchema, structuredContent } from "./output.js";
 export { ToolKit, formatToolList, formatToolDetail } from "./toolkit.js";
+
+// Spec discovery
+export { discoverSpec, isValidSpec, normalizeDomain, SPEC_PATHS } from "./discovery.js";
+
+// Cost tracking
+export { CostTracker, computeCost, estimateTokens, formatCost, lookupPrice, MODEL_PRICING } from "./cost.js";
+export type { CostEntry, ModelPricing } from "./cost.js";
 
 // Spec utilities
 export { diffSpecs, type Change } from "./diff.js";

@@ -9,6 +9,7 @@ import {
 } from "@modelcontextprotocol/node";
 import { healthPayload, type Metrics } from "./metrics.js";
 import { portalHtml } from "./portal.js";
+import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
 
 export interface GatewayOptions {
   port: number;
@@ -17,6 +18,8 @@ export interface GatewayOptions {
   path: string;
   /** Display name for the developer portal. */
   serverName?: string;
+  /** Optional gateway auth (API key / JWT). */
+  auth?: GatewayAuthConfig;
   /** Allowed `Host` header values. Defaults to localhost-only. */
   allowedHosts?: string[];
   /** Allowed `Origin` header values. Defaults to localhost-only. */
@@ -48,6 +51,11 @@ export function startGateway(options: GatewayOptions): Promise<Server> {
 
   const handler = async (req: any, res: any) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (options.auth && url.pathname !== "/healthz" && url.pathname !== "/metrics") {
+      const guard = authMiddleware(options.auth);
+      if (!guard(req, res)) return;
+    }
 
     if (req.method === "GET" && url.pathname === "/healthz") {
       res.writeHead(200, { "content-type": "application/json" });
