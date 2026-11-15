@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 if (!existsSync("dist/cli.js")) {
-  console.log("openapimcp installed (dev mode). Run `npm run build` then `npx openapimcp setup <spec>`.");
+  console.log("openapimcp installed (dev mode). Run `npm run build` then `npx @asubilla/openapimcp setup <spec>`.");
   process.exit(0);
 }
 

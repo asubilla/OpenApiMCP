@@ -181,6 +181,6 @@ export function runSetup(opts: SetupOptions): SetupResult {
 }
 
 export function postinstallHint(): void {
-  process.stdout.write("\nopenapimcp installed. Run `npx openapimcp setup <spec>` to auto-configure your editors (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed).\n");
+  process.stdout.write("\nopenapimcp installed. Run `npx @asubilla/openapimcp setup <spec>` to auto-configure your editors (OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed).\n");
   process.stdout.write("Set OPENAPIMCP_AUTO_SETUP=1 to run setup automatically on install.\n");
 }
