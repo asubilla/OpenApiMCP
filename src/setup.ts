@@ -163,7 +163,7 @@ export function runSetup(opts: SetupOptions): SetupResult {
   if (!opts.quiet) {
     const log = (line: string) => process.stdout.write(line + "\n");
     if (result.written.length) {
-      log("✓ configured:");
+      log(opts.dryRun ? "would configure (dry-run, nothing written):" : "✓ configured:");
       for (const w of result.written) log(`  - ${w.client}: ${w.path}`);
     }
     if (result.skipped.length) {

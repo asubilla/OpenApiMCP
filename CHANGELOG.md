@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **`setup --dry-run` printed "✓ configured:"** — made it read `would configure (dry-run, nothing written):` so a reader can't mistake the dry-run for a real write. (Nothing was ever written in dry-run mode.)
+- **Docs**: README now reports live-verified behavior against petstore3/httpbin/PokeAPI (gateway auth 401/200, healthz, metrics, ditto call, batch, diff vs pinned snapshot).
+
 ## [1.13.2]
 
 ### Fixed

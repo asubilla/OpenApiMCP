@@ -266,6 +266,67 @@ The corpus test asserts: each spec loads, tools are generated, and `compat`,
 Refreshing the snapshots and their licenses:
 [`test/fixtures/corpus/README.md`](test/fixtures/corpus/README.md).
 
+## Verified against real APIs (2026-11-16, v1.13.2)
+
+Not every CLI claim is aspirational — here is what was actually run against
+the live public internet, verbatim:
+
+**Live MCP gateway on PokeAPI** (`openapimcp ./pokeapi.yml --http --port 3000
+--gateway-key topsecret`):
+
+```
+GET /healthz           -> {"status":"ok","uptimeSeconds":2}
+GET /metrics          -> openapimcp_gateway_info{version="1.13.2"} 1
+POST /mcp (no key)    -> HTTP 401 Unauthorized
+POST /mcp (+ X-API-Key) -> HTTP 200, SSE:
+  data: {"result":{"protocolVersion":"2024-11-05",
+         "serverInfo":{"name":"pok-api","version":"1.13.2"}}, ...}
+```
+
+**Live tool calls** (no mock, real network):
+
+```
+$ openapimcp ./pokeapi.yml pokemon_retrieve --base-url https://pokeapi.co \
+    --arg id=ditto --fields name,id,height,weight,base_experience
+GET https://pokeapi.co/api/v2/pokemon/ditto/
+HTTP 200 OK
+{ "name": "ditto", "id": 132, "height": 3, "weight": 40, "base_experience": 101 }
+```
+
+Batch 3-way concurrency against httpbin.org (all HTTP 200):
+
+```
+$ openapimcp batch ./httpbin.json --file calls.json --base-url https://httpbin.org --concurrency 3
+✓ get__get
+✓ get__uuid
+✓ get__status_codes
+3 ok, 0 failed, 3 total
+```
+
+`doctor` against both live specs (truncated):
+
+```
+httpbin.org  -> 73 tools, compat 73/0/0, reachable HTTP 200
+pokeapi.yml  -> 102 tools, compat 51/51/0 (allOf/oneOf annotations)
+petstore3    -> 19 tools, compat 13/0/6 (XML bodies)
+```
+
+Spec diff, pinned corpus snapshot vs live petstore3.swagger.io:
+
+```
+openapimcp diff ./fixtures/corpus/petstore3.openapi.json ./petstore3-live.json
+breaking:     0
+non-breaking: 0
+```
+
+Best-effort results worth knowing: `discover https://pokeapi.co` reports
+"no OpenAPI spec found" (PokeAPI doesn't publish at well-known paths),
+and `lint openapi.json` correctly flags httpbin.org's missing `info.version`
+(1 error, 81 warnings) — the linter is honest, not vanity.
+
+Interactive surfaces (`openapimcp ui`) are covered by unit tests but not part
+of this sweep.
+
 ## Commands
 
 ```
