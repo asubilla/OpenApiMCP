@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.13.2]
+
+### Fixed
+- **Docker publish still failing on `npm ci --omit=dev`** — the runtime (and build) stage runs `postinstall` (`scripts/postinstall.js`) but the Dockerfile never copied `scripts/`, so npm died with `Cannot find module '/app/scripts/postinstall.js'`. Both stages now `COPY scripts ./scripts` before `npm ci`. Fixes the `Docker / publish` check on `v*` tags.
+
 ## [1.13.1]
 
 ### Fixed
