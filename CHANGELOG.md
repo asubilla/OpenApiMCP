@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.13.1]
+
+### Fixed
+- **CI / Docker broken on Node 20** — `undici` 8 requires `node >=22.19.0`, so npm silently skipped the optional dependency on Node 20 and TypeScript failed with `Cannot find module 'undici'`. `optionalDependencies` now pins `undici@^7.30.2` (`node >=20.18.1`, same `Agent`/`ProxyAgent` API; verified live: `--ca`, `--proxy` incl. CONNECT). Fixes the failing `CI / test (20)` and `Docker / publish` jobs.
+
 ## [1.13.0]
 
 ### Added
