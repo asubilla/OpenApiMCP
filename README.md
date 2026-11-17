@@ -126,12 +126,23 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 
 ## Install
 
+### For AI agents (zero install)
+
 ```bash
-npx @asubilla/openapimcp <spec>          # no install needed
-npm install -g @asubilla/openapimcp      # or globally
+npx -y @asubilla/openapimcp <spec>          # no install; MCP clients auto-detect or use `setup`
+```
+
+### For manual developers (global install)
+
+```bash
+npm install -g @asubilla/openapimcp
+openapimcp --help
 ```
 
 Requires **Node.js 20+**.
+
+Want the full picture — install for both audiences, how to call every tool,
+and honest roadmap? → [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Quickstart
 
@@ -479,7 +490,7 @@ helm install demo ./charts/openapimcp --set spec=https://example.com/openapi.jso
 ## Use as a library
 
 ```ts
-import { parseSpec, buildServer, startGateway, rankTools, redact, summarizeJson, portalHtml } from "openapimcp";
+import { parseSpec, buildServer, startGateway, rankTools, redact, summarizeJson, portalHtml } from "@asubilla/openapimcp";
 
 const api = await parseSpec("https://example.com/openapi.json");
 await startGateway({ port: 3000, host: "127.0.0.1", path: "/mcp", createServer: () => buildServer(api, { headers: {}, timeoutMs: 30000, maxBytes: 20000, retries: 2 }) });
@@ -495,23 +506,28 @@ JSON Schema → Zod conversion is done in-house, so there are no heavyweight cod
 
 ## Roadmap
 
+Full roadmap with install + usage for both audiences and per-command
+`[verified] / [unverified]` markers: **[docs/roadmap.md](docs/roadmap.md)**.
+
 - [x] Auth presets, filtering, annotations, retries, caching, pagination, multi-spec, `generate`
 - [x] HTTP gateway, policy engine, OpenTelemetry, Docker
 - [x] Redaction, summarization, tool search, rate limit, circuit breaker, disk cache
 - [x] Config file, `.env`, overlays, diff, TS client, smoke tests, Postman, completions, TUI, Helm, Action, auto-config
-- [x] Developer portal, MCP prompts, few-shot examples
+- [x] Developer portal, MCP prompts, MCP resources (`--resources`), few-shot examples
 - [x] Gateway auth (API key + JWT), OAuth2 client-credentials, spec discovery, cost tracking
-- [x] Context budget, feedback store, eval harness, agent memory, workflow engine, spec linting, MCP sampling, marketplace (APIs.guru)
-- [x] `structuredContent` output schemas (1.7.2)
-- [x] GraphQL → MCP (`openapimcp graphql`)
-- [x] Serverless adapters (Lambda + Cloudflare/Vercel Edge fetch handler)
+- [x] Context budget, feedback store, eval harness, agent memory, workflow, lint, sampling, marketplace
+- [x] `structuredContent` output (1.7.2), GraphQL → MCP, serverless adapters
 - [ ] gRPC → MCP
+- [ ] MCP streaming resumption (last-event-id)
+- [ ] Per-user rate limits at the gateway
+
+See [docs/roadmap.md](docs/roadmap.md) for the per-audience breakdown.
 
 ## Contributing
 
 ```bash
 npm install
-npm test   # build + 727 unit tests + end-to-end MCP handshake
+npm test   # build + 741 unit tests + end-to-end MCP handshake
 ```
 
 ## License

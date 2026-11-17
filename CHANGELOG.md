@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - **`setup --dry-run` printed "✓ configured:"** — made it read `would configure (dry-run, nothing written):` so a reader can't mistake the dry-run for a real write. (Nothing was ever written in dry-run mode.)
+- **README: mis-scoped `import ... from "openapimcp"`** → `@asubilla/openapimcp`.
+
+### Added
+- **`docs/roadmap.md`** — one master roadmap for AI agents and manual developers: install for both audiences, how to call every command with per-command verified/unverified markers, real-world verification status, and next/planned features with honest status lines.
 - **Docs**: README now reports live-verified behavior against petstore3/httpbin/PokeAPI (gateway auth 401/200, healthz, metrics, ditto call, batch, diff vs pinned snapshot).
 
 ## [1.13.2]
