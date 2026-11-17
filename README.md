@@ -112,10 +112,9 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 
 - 🔌 **Zero code** — runtime-generated tools, nothing to maintain
 - 🔐 **Auto auth** — resolves `securitySchemes` from env vars; policy engine for tools/methods/hosts
-- 🪶 **Context-friendly** — field allowlists, response summarization, redaction
+- 🪶 **Context-friendly** — field allowlists, response summarization, redaction, structuredContent
 - ♻️ **Resilient** — retries, caching (memory + disk), pagination, rate limiting, circuit breaker
 - 🔎 **Progressive tool search** — `search_tools` + `call_tool` for huge APIs
-- 🗜️ **Context-friendly** — field allowlists, response summarization, redaction, structuredContent
 - ⏳ **Async jobs** — 202 Accepted polling, status-URL detection, timeout/retry
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams + developer portal
 - 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
@@ -157,9 +156,7 @@ openapimcp ./openapi.json --http                 # ...or as an HTTP gateway
 
 ## Auto-configure your editors
 
-One command detects and configures every MCP client installed on your machine
-(OpenCode, Claude Desktop, Cursor, Windsurf, VS Code, Continue, Zed) on
-Windows, macOS, and Linux:
+One command detects and configures every MCP client installed on your machine:
 
 ```bash
 openapimcp setup ./openapi.json          # user-level clients by default
