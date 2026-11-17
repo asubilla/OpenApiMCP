@@ -4,15 +4,22 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.14.0]
+
+### Added
+- **gRPC → MCP preview** — `grpcTools(parseProto(text))` turns a proto3 service into MCP tool definitions (snake_case name, `POST /<package>.<Service>/<Method>`). `parseProto`, `listServices`, `formatGrpcTools`, `ProtoService`/`ProtoPackage` exported. New module `src/grpc.ts` (8 new tests).
+- **SSE resumability** — new `--resumable` flag on `openapimcp serve --http`: the gateway assigns a session ID on initialize and tags every SSE event with `id:`. Reconnecting clients can send `Last-Event-ID` and replay missed events from an in-memory event store. Implementation: `src/event-store.ts` — 10 new tests.
+- **Per-user rate limits at the gateway** — new `--user-rate-limit <file>` flag: `{"defaultPerMinute":60,"perUser":{"alice":120}}`. Keyed by `x-user-key` header, then `x-api-key`, then last 20 chars of `authorization`. Over-limit requests return `429` with `retry-after: 60`. Implementation: `src/user-ratelimit.ts` — 18 new tests.
+- **Structured output schemas in MCP** — tools whose 2xx JSON response schema resolves to an object now carry an `outputSchema` automatically (when `--structured-content` is on). Clients receive typed JSON schemas for `structuredContent` payloads. Implementation: `src/spec-output.ts` — 18 new tests. `toOutputSchema()` refuses non-object roots and nested `$ref`s.
+- **`grpc` / `output-schema` modules exported** for library consumers via `@asubilla/openapimcp` `parseProto`, `listServices`, `grpcTools`, `formatGrpcTools`, `InMemoryEventStore`, `UserRateLimiter`, `parseUserRateLimit`, `userKeyFromHeaders`, `formatUserRateLimit`, `responseSchemaForOperation`, `toolOutputSchema`, `collectResponseSchemas`, `formatOutputSchemaSummary`, `stableStringifyCycles`, `stringifyCycles`.
 
 ### Fixed
 - **`setup --dry-run` printed "✓ configured:"** — made it read `would configure (dry-run, nothing written):` so a reader can't mistake the dry-run for a real write. (Nothing was ever written in dry-run mode.)
 - **README: mis-scoped `import ... from "openapimcp"`** → `@asubilla/openapimcp`.
+- **README** reports live-verified behavior against petstore3/httpbin/PokeAPI (gateway auth 401/200, healthz, metrics, ditto call, batch, diff vs pinned snapshot).
 
-### Added
-- **`docs/roadmap.md`** — one master roadmap for AI agents and manual developers: install for both audiences, how to call every command with per-command verified/unverified markers, real-world verification status, and next/planned features with honest status lines.
-- **Docs**: README now reports live-verified behavior against petstore3/httpbin/PokeAPI (gateway auth 401/200, healthz, metrics, ditto call, batch, diff vs pinned snapshot).
+### Docs
+- **`docs/roadmap.md`** — one master roadmap for AI agents and manual developers, with every command marked verified/unverified based on real runs.
 
 ## [1.13.2]
 

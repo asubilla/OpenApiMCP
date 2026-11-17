@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { jsonSchemaToZod } from "./schema.js";
+import { toOutputSchema } from "./output.js";
 import { callApi, type RequestOptions } from "./http.js";
 import { TOOL_CALL_NAME, TOOL_SEARCH_NAME, rankTools } from "./toolsearch.js";
 import { buildSpecResources } from "./mcp-resources.js";
@@ -122,10 +123,12 @@ export function buildServer(api: ParsedApi, opts: BuildServerOptions): McpServer
       shape[param.argName] = schema;
     }
     const inputSchema = z.object(shape);
+    const outJson = opts.structuredContent ? toOutputSchema(tool.responseSchema) : undefined;
+    const outputSchema = outJson ? jsonSchemaToZod(outJson) : undefined;
 
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema, annotations: tool.annotations },
+      { description: tool.description, inputSchema, annotations: tool.annotations, ...(outputSchema ? { outputSchema } : {}) },
       async (args: Record<string, unknown>) => {
         try {
           const result = await callApi(tool, args, opts);

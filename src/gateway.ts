@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   NodeStreamableHTTPServerTransport,
@@ -10,6 +11,8 @@ import {
 import { healthPayload, type Metrics } from "./metrics.js";
 import { portalHtml } from "./portal.js";
 import { authMiddleware, type GatewayAuthConfig } from "./gateway-auth.js";
+import { InMemoryEventStore } from "./event-store.js";
+import { UserRateLimiter, userKeyFromHeaders, type UserRateLimitConfig } from "./user-ratelimit.js";
 
 export interface GatewayOptions {
   port: number;
@@ -30,6 +33,12 @@ export interface GatewayOptions {
   metrics?: Metrics;
   /** Called after the server is listening. */
   onListening?: (url: string) => void;
+  /** Enable SSE resumability (session IDs + Last-Event-ID event replay). */
+  resumable?: boolean;
+  /** Maximum events to retain in the in-memory event store. Default 1000. */
+  resumableMaxEvents?: number;
+  /** Per-user rate limit (x-user-key / x-api-key / auth tail). */
+  userRateLimit?: UserRateLimitConfig;
 }
 
 function isLoopback(host: string): boolean {
@@ -49,12 +58,24 @@ export function startGateway(options: GatewayOptions): Promise<Server> {
       ? localhostOriginValidation()
       : null;
 
+  const userLimiter = options.userRateLimit ? new UserRateLimiter(options.userRateLimit) : undefined;
+  const eventStore = options.resumable ? new InMemoryEventStore({ maxEvents: options.resumableMaxEvents }) : undefined;
+
   const handler = async (req: any, res: any) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (options.auth && url.pathname !== "/healthz" && url.pathname !== "/metrics") {
       const guard = authMiddleware(options.auth);
       if (!guard(req, res)) return;
+    }
+
+    if (userLimiter && req.method === "POST" && url.pathname === options.path) {
+      const key = userKeyFromHeaders(req.headers as Record<string, string | string[] | undefined>);
+      if (!userLimiter.check(key)) {
+        res.writeHead(429, { "content-type": "application/json", "retry-after": "60" });
+        res.end(JSON.stringify({ error: "rate limit exceeded", user: key ?? "default" }));
+        return;
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/healthz") {
@@ -81,7 +102,10 @@ export function startGateway(options: GatewayOptions): Promise<Server> {
     if (validateOrigin && !validateOrigin(req, res)) return;
 
     const server = options.createServer();
-    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const transport = new NodeStreamableHTTPServerTransport({
+      sessionIdGenerator: options.resumable ? () => randomUUID() : undefined,
+      ...(eventStore ? { eventStore } : {})
+    });
     res.on("close", () => {
       transport.close().catch(() => {});
       server.close().catch(() => {});

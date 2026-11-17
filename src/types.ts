@@ -42,6 +42,8 @@ export interface ToolDef {
   baseUrl?: string;
   /** Per-operation timeout/retry/response limits from `x-openapimcp` extensions. */
   opConfig?: import("./op-config.js").OpConfig;
+  /** 2xx response JSON schema (for MCP outputSchema). */
+  responseSchema?: any;
 }
 
 export interface ParsedApi {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="412" viewBox="0 0 920 412">
+  <rect width="920" height="412" fill="#0d1117" rx="10"/>
+  <rect width="920" height="44" fill="#161b22" rx="10"/>
+  <rect width="920" height="12" y="32" fill="#161b22"/>
+  <circle cx="38" cy="24" r="6" fill="#ff5f56"/>
+  <circle cx="58" cy="24" r="6" fill="#ffbd2e"/>
+  <circle cx="78" cy="24" r="6" fill="#27c93f"/>
+  <text x="460" y="30" text-anchor="middle" font-family="'SF Mono', ui-monospace, monospace" font-size="13" fill="#8b949e">openapimcp — live session</text>
+  <g transform="translate(0,44)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#c9d1d9" xml:space="preserve">﻿$ openapimcp list test/fixtures/corpus/pokeapi.openapi.yml --json | ConvertFrom-Json | Select-Object -First 5</text></g>
+    <g transform="translate(0,64)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">[</text></g>
+    <g transform="translate(0,84)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#c9d1d9" xml:space="preserve">  {</text></g>
+    <g transform="translate(0,104)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">    "name": "meta_retrieve",</text></g>
+    <g transform="translate(0,124)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">    "description": "Get API metadata",</text></g>
+    <g transform="translate(0,144)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">    "method": "get",</text></g>
+    <g transform="translate(0,164)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#c9d1d9" xml:space="preserve"></text></g>
+    <g transform="translate(0,184)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#7ee787" xml:space="preserve">$ openapimcp call test/fixtures/corpus/pokeapi.openapi.yml pokemon_retrieve --base-url https://pokeapi.co --arg id=ditto --fields name,id,height,weight</text></g>
+    <g transform="translate(0,204)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#a5d6ff" xml:space="preserve">GET https://pokeapi.co/api/v2/pokemon/ditto/</text></g>
+    <g transform="translate(0,224)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#79c0ff" xml:space="preserve">HTTP 200 OK</text></g>
+    <g transform="translate(0,244)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#c9d1d9" xml:space="preserve"></text></g>
+    <g transform="translate(0,264)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">{</text></g>
+    <g transform="translate(0,284)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">  "name": "ditto",</text></g>
+    <g transform="translate(0,304)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">  "id": 132,</text></g>
+    <g transform="translate(0,324)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">  "height": 3,</text></g>
+    <g transform="translate(0,344)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">  "weight": 40</text></g>
+    <g transform="translate(0,364)"><text x="16" y="0" font-family="'SF Mono', ui-monospace, monospace" font-size="14" fill="#e6edf3" xml:space="preserve">}</text></g>
+</svg>

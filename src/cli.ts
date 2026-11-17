@@ -48,6 +48,7 @@ import { checkGateway, formatProductionReport } from "./production-defaults.js";
 import { parseBudget, BudgetTracker } from "./budget.js";
 import { parseMapping } from "./response-map.js";
 import { loadPlugin } from "./plugin-hooks.js";
+import { parseUserRateLimit } from "./user-ratelimit.js";
 import { createDispatcher, formatDispatcherPlan } from "./proxy-dispatcher.js";
 import { runBatch, formatBatchResults, formatBatchSummary, type BatchResult } from "./batch.js";
 import { createCallHistory, formatCallList } from "./call-history.js";
@@ -60,7 +61,7 @@ import { createWorkflowContext, resolveArgs, validateWorkflow, formatWorkflow, t
 import { createFetchHandler } from "./serverless.js";
 import type { ParsedApi, ToolDef } from "./types.js";
 
-const VERSION = "1.13.2";
+const VERSION = "1.14.0";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 interface FilterOptions {
@@ -123,6 +124,8 @@ const runtimeFlags = (cmd: Command) =>
     .option("--async", "Poll 202 Accepted responses until the job completes (default on for 202)")
     .option("--async-poll-interval <ms>", "Polling interval in ms for async jobs", "1000")
     .option("--async-max-wait <ms>", "Maximum wait time in ms for async jobs", "60000")
+    .option("--resumable", "Enable SSE resumability (Last-Event-ID replay for reconnecting clients)")
+    .option("--user-rate-limit <file>", "Per-user rate limit JSON: {\"defaultPerMinute\":60,\"perUser\":{\"alice\":120}}")
     .option("--profile <name>", "Named profile from the profiles file")
     .option("--profiles <file>", "Profiles file (JSON) for baseUrl/headers/policy/readOnly per environment")
     .option("--secrets-provider <spec>", "Secrets source: env | file:<path>")
@@ -683,6 +686,9 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
       if (check.severity === "error") log.error(message, { id: check.id });
       else log.warn(message, { id: check.id });
     }
+    const userRateLimit = options.userRateLimit ? parseUserRateLimit(parseJsonFlag(options.userRateLimit, "--user-rate-limit")) : undefined;
+    if (options.userRateLimit && !userRateLimit) fatal("--user-rate-limit must be a JSON object like {\"defaultPerMinute\":60,\"perUser\":{\"alice\":120}}");
+
     await startGateway({
       port: Number(options.port) || 3000,
       host: options.host ?? "127.0.0.1",
@@ -693,7 +699,9 @@ async function serveAction(specs: string[], rawOptions: any, command: Command): 
       auth: gatewayAuth,
       createServer,
       metrics,
-      onListening: (url) => log.info("gateway listening", { url, tools: tools.length })
+      resumable: Boolean(options.resumable),
+      userRateLimit,
+      onListening: (url) => log.info("gateway listening", { url, tools: tools.length, resumable: Boolean(options.resumable), rateLimited: Boolean(userRateLimit) })
     });
     return;
   }

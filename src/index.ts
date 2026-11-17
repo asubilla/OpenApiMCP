@@ -61,6 +61,10 @@ export { API_PRESETS, getPreset, presetNames, formatPresetList, type ApiPreset }
 export { runBeforeRequest, runAfterResponse, validatePlugin, loadPlugin, type PluginHook, type HookRequest, type HookResponse } from "./plugin-hooks.js";
 export { runBatch, formatBatchResults, formatBatchSummary, type BatchCall, type BatchResult } from "./batch.js";
 export { buildProxyEnv, planProxyTls, formatProxyTls, type ProxyTlsOptions, type ProxyTlsPlan } from "./proxy-tls.js";
+export { parseProto, listServices, grpcTools, formatGrpcTools, type ProtoField, type ProtoMethod, type ProtoService, type ProtoPackage } from "./grpc.js";
+export { InMemoryEventStore, type EventStore, type EventId, type StreamId } from "./event-store.js";
+export { UserRateLimiter, parseUserRateLimit, userKeyFromHeaders, formatUserRateLimit, type UserRateLimitConfig } from "./user-ratelimit.js";
+export { responseSchemaForOperation, toolOutputSchema, collectResponseSchemas, formatOutputSchemaSummary } from "./spec-output.js";
 export { stableStringifyCycles, stringifyCycles } from "./json-safe.js";
 
 // Wave C — more features

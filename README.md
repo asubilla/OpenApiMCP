@@ -13,8 +13,7 @@ npx @asubilla/openapimcp https://petstore3.swagger.io/api/v3/openapi.json
 
 That's it. Your agent now has hands on that API.
 
-<!-- TODO: replace with actual recording -->
-<!-- ![demo](docs/demo.gif) -->
+![openapimcp live session](demo/demo.svg)
 
 ---
 
@@ -119,6 +118,9 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams + developer portal
 - 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
 - 📦 **Extras** — `generate`, TS client generation, spec diff, smoke tests, Postman import, shell completions, TUI, auto-config
+- 📡 **SSE resumability** — `--resumable` on the HTTP gateway: session IDs + `Last-Event-ID` replay for reconnecting clients
+- 👤 **Per-user gateway quotas** — `--user-rate-limit '{"defaultPerMinute":60,"perUser":{"vip":120}}'`, keyed by `x-user-key` / `x-api-key` / auth tail
+- 🎚️ **Typed tool outputs** — tools with clean 2xx response schemas now advertise `outputSchema` automatically (when `--structured-content` is on)
 - 🧵 **Batch calls** — `openapimcp batch <spec> --file calls.json --concurrency 5` runs many tool calls concurrently with partial-failure reporting
 - 🛡️ **Production guardrails** — non-loopback/no-auth/no-policy gateway checks, idempotency keys, SigV4 signing, tenant/user credential isolation, deprecated-op filtering, response normalization, budgets
 - 🐳 **Docker + Helm + Action + Homebrew + Scoop**
@@ -377,7 +379,7 @@ openapimcp completions [shell]       # bash | zsh | fish | powershell
 `--history` `--plugin` `--sigv4` `--resources` `--preset` `--tenants` `--tenant` `--user-key`
 `--ca <file>` `--proxy <url>`
 
-Gateway: `--http` `--port` `--host` `--path` `--allowed-host` `--allowed-origin`.
+Gateway: `--http` `--port` `--host` `--path` `--allowed-host` `--allowed-origin` `--resumable` `--user-rate-limit`.
 
 ## Production hardening
 
@@ -391,6 +393,8 @@ openapimcp call api.json listPets --tenants tenants.json --tenant acme --user-ke
 openapimcp serve api.json --resources                # expose spec/operations/servers/security as MCP resources
 openapimcp serve api.json --plugin ./my-auth.js      # hook beforeRequest/afterResponse
 openapimcp serve api.json --sigv4 us-east-1:execute-api   # AWS SigV4 (env: AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)
+openapimcp serve api.json --resumable                   # SSE event ids + Last-Event-ID replay for reconnects
+openapimcp serve api.json --user-rate-limit '{"defaultPerMinute":60,"perUser":{"vip":300}}'   # 429 on over-limit users
 ```
 
 - **Tenant isolation** — `tenants.json` (`{"tenants": {...}}`) pins baseUrl, headers, policy and read-only per tenant, with per-user credential overrides (`users.<key>`). User creds win over tenant creds.
