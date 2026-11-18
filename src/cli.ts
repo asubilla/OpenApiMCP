@@ -49,6 +49,8 @@ import { parseBudget, BudgetTracker } from "./budget.js";
 import { parseMapping } from "./response-map.js";
 import { loadPlugin } from "./plugin-hooks.js";
 import { parseUserRateLimit } from "./user-ratelimit.js";
+import { formatExamples } from "./examples.js";
+import { collectResponseSchemas } from "./spec-output.js";
 import { createDispatcher, formatDispatcherPlan } from "./proxy-dispatcher.js";
 import { runBatch, formatBatchResults, formatBatchSummary, type BatchResult } from "./batch.js";
 import { createCallHistory, formatCallList } from "./call-history.js";
@@ -554,6 +556,27 @@ program
   .command("presets")
   .description("List curated API presets (petstore, pokeapi, github)")
   .action(() => { process.stdout.write(formatPresetList() + "\n"); });
+
+program
+  .command("examples")
+  .description("Print ready-to-paste MCP client config snippets")
+  .argument("[spec]", "Spec to use in the snippet (default: placeholder URL)")
+  .action((spec?: string) => {
+    process.stdout.write(formatExamples(spec) + "\n");
+  });
+
+program
+  .command("output-schema")
+  .description("List which operations carry a structured outputSchema")
+  .argument("<spec>", "Path or URL to an OpenAPI/Swagger document")
+  .action(async (spec: string) => {
+    const doc = await loadDocument(spec);
+    const map = collectResponseSchemas(doc);
+    const lines = Object.entries(map).map(([key, schema]) => `${schema ? "✓" : "—"} ${key}`).sort();
+    process.stdout.write(lines.join("\n") + "\n");
+    const total = lines.length, withSchema = lines.filter((l) => l.startsWith("✓")).length;
+    process.stderr.write(`\n${withSchema}/${total} operations have an outputSchema (object-shaped 2xx JSON).\n`);
+  });
 
 program
   .command("completions")
@@ -1397,7 +1420,7 @@ function saveDefaultSpec(spec: string, global: boolean): void {
 }
 
 // Route `openapimcp <spec>` to the default `serve` command.
-const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "bundle", "pin", "presets", "batch", "history", "completions", "help"]);
+const KNOWN = new Set(["serve", "list", "doctor", "call", "generate", "diff", "postman", "client", "smoke", "ui", "init", "use", "run", "setup", "discover", "lint", "marketplace", "eval", "memory", "graphql", "workflow", "a2a", "compat", "dry-run", "config", "bundle", "pin", "presets", "batch", "history", "completions", "examples", "output-schema", "help"]);
 const argv = process.argv.slice();
 const first = argv[2];
 if (first && !first.startsWith("-") && !KNOWN.has(first)) argv.splice(2, 0, "serve");

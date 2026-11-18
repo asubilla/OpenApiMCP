@@ -1,0 +1,93 @@
+# corpus-drift — read-only snapshot drift detection, NOT a merge blocker.
+#
+# The three specs under test/fixtures/corpus/ are PINNED snapshots vendored
+# into this repo. They are not expected to track upstream, and upstream
+# changing is NOT a failure condition — that is why this workflow only runs
+# weekly (and on manual dispatch) and is deliberately not wired into the PR
+# gate. What we actually care about is whether our parser still handles
+# real-world spec shapes. A failure here means one of:
+#   - a corpus fixture went missing/unreadable,
+#   - the YAML corpus no longer loads via `node dist/cli.js list`
+#     (i.e. the parser broke on a real-world spec change),
+#   - a JSON corpus no longer parses with JSON.parse,
+#   - the tool counts collapsed (PokeAPI ref chain / Swagger 2.0 / OpenAPI 3.0),
+# NOT that upstream itself changed — fixtures are pinned and would need a
+# deliberate, manual refresh (see test/fixtures/corpus/README.md).
+name: corpus-drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  corpus-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Corpus fixtures present and readable
+        run: |
+          set -e
+          for f in \
+            test/fixtures/corpus/pokeapi.openapi.yml \
+            test/fixtures/corpus/httpbin.openapi.json \
+            test/fixtures/corpus/petstore3.openapi.json; do
+            if [ ! -r "$f" ]; then
+              echo "corpus file missing or unreadable: $f" >&2
+              exit 1
+            fi
+            echo "corpus present: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: JSON corpora parse with JSON.parse
+        run: |
+          set -e
+          node -e "JSON.parse(require('node:fs').readFileSync('test/fixtures/corpus/httpbin.openapi.json','utf8')); console.log('httpbin JSON.parse ok')"
+          node -e "JSON.parse(require('node:fs').readFileSync('test/fixtures/corpus/petstore3.openapi.json','utf8')); console.log('petstore3 JSON.parse ok')"
+
+      - name: PokeAPI corpus loads (YAML, cyclic $refs) and tools >= 100
+        run: |
+          set -e
+          node dist/cli.js list test/fixtures/corpus/pokeapi.openapi.yml --json > /tmp/out.json
+          cp /tmp/out.json /tmp/pokeapi.json
+          node -e "const t=JSON.parse(require('node:fs').readFileSync('/tmp/out.json','utf8')); if(!Array.isArray(t)||t.length<100){console.error('pokeapi corpus broken: tools='+(Array.isArray(t)?t.length:'n/a')+' (< 100) — parser likely broke on the 3.1.0 cyclic-ref chain');process.exit(1)} console.log('pokeapi tools='+t.length)"
+
+      - name: httpbin corpus loads (Swagger 2.0) and tools >= 50
+        run: |
+          set -e
+          node dist/cli.js list test/fixtures/corpus/httpbin.openapi.json --json > /tmp/out.json
+          cp /tmp/out.json /tmp/httpbin.json
+          node -e "const t=JSON.parse(require('node:fs').readFileSync('/tmp/out.json','utf8')); if(!Array.isArray(t)||t.length<50){console.error('httpbin corpus broken: tools='+(Array.isArray(t)?t.length:'n/a')+' (< 50)');process.exit(1)} console.log('httpbin tools='+t.length)"
+
+      - name: petstore3 corpus loads (OpenAPI 3.0.4) and tools >= 15
+        run: |
+          set -e
+          node dist/cli.js list test/fixtures/corpus/petstore3.openapi.json --json > /tmp/out.json
+          cp /tmp/out.json /tmp/petstore3.json
+          node -e "const t=JSON.parse(require('node:fs').readFileSync('/tmp/out.json','utf8')); if(!Array.isArray(t)||t.length<15){console.error('petstore3 corpus broken: tools='+(Array.isArray(t)?t.length:'n/a')+' (< 15)');process.exit(1)} console.log('petstore3 tools='+t.length)"
+
+      - name: Drift summary
+        run: |
+          set -e
+          P=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('/tmp/pokeapi.json','utf8')).length)")
+          H=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('/tmp/httpbin.json','utf8')).length)")
+          S=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('/tmp/petstore3.json','utf8')).length)")
+          echo "corpus ok: pokeapi>tools=$P, httpbin>tools=$H, petstore3>tools=$S"
+          echo "pokeapi>tools=$P"
+          echo "httpbin>tools=$H"
+          echo "petstore3>tools=$S"

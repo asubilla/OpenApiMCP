@@ -118,6 +118,8 @@ Ad-hoc is fine for a one-off. `openapimcp` is a **permanent capability**.
 - 🌐 **HTTP gateway** — Streamable HTTP with Host/Origin guards for teams + developer portal
 - 📈 **Observability** — OpenTelemetry, Prometheus metrics, health probe, JSON logs, audit log
 - 📦 **Extras** — `generate`, TS client generation, spec diff, smoke tests, Postman import, shell completions, TUI, auto-config
+- 📋 **`examples`** — paste-ready `opencode.json` / `claude_desktop_config.json` / `mcp.json` / `.windsurf/MCP_config.json` / `settings.json` / TOML snippets for every detected client
+- 🎚️ **`output-schema`** — see which operations advertise a typed `outputSchema` right now
 - 📡 **SSE resumability** — `--resumable` on the HTTP gateway: session IDs + `Last-Event-ID` replay for reconnecting clients
 - 👤 **Per-user gateway quotas** — `--user-rate-limit '{"defaultPerMinute":60,"perUser":{"vip":120}}'`, keyed by `x-user-key` / `x-api-key` / auth tail
 - 🎚️ **Typed tool outputs** — tools with clean 2xx response schemas now advertise `outputSchema` automatically (when `--structured-content` is on)
@@ -143,7 +145,7 @@ openapimcp --help
 Requires **Node.js 20+**.
 
 Want the full picture — install for both audiences, how to call every tool,
-and honest roadmap? → [`docs/roadmap.md`](docs/roadmap.md).
+and honest roadmap? → [`docs/roadmap.md`](docs/roadmap.md). What gets inferred vs needs hints: [`docs/compat-openapimcp-vs-spec.md`](docs/compat-openapimcp-vs-spec.md).
 
 ## Quickstart
 
@@ -363,6 +365,8 @@ openapimcp bundle <spec> [--out f]  # resolve external $refs into a self-contain
 openapimcp pin <spec>               # record the sha256 hash of a spec (detect unexpected changes)
 openapimcp presets                  # curated APIs: petstore, pokeapi, github (use with --preset)
 openapimcp marketplace [query]       # browse 2000+ public APIs on APIs.guru
+openapimcp examples [spec]          # paste-ready MCP client config snippets (OpenCode, Claude, Cursor, …)
+openapimcp output-schema <spec>     # which ops carry a typed outputSchema
 openapimcp init <spec>              # write an MCP client config entry
 openapimcp use <spec>               # save a default spec
 openapimcp setup [spec]             # auto-configure ALL detected editors

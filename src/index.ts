@@ -65,6 +65,7 @@ export { parseProto, listServices, grpcTools, formatGrpcTools, type ProtoField, 
 export { InMemoryEventStore, type EventStore, type EventId, type StreamId } from "./event-store.js";
 export { UserRateLimiter, parseUserRateLimit, userKeyFromHeaders, formatUserRateLimit, type UserRateLimitConfig } from "./user-ratelimit.js";
 export { responseSchemaForOperation, toolOutputSchema, collectResponseSchemas, formatOutputSchemaSummary } from "./spec-output.js";
+export { EXAMPLE_CONFIGS, formatExamples, type ExampleConfig } from "./examples.js";
 export { stableStringifyCycles, stringifyCycles } from "./json-safe.js";
 
 // Wave C — more features

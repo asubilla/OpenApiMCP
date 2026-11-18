@@ -39,6 +39,31 @@ test("doctor reports tools and auth state", () => {
   assert.match(out, /ApiKeyAuth/);
 });
 
+test("examples prints all 8 client configs with placeholder spec", () => {
+  const out = run(["examples"]);
+  assert.match(out, /OpenCode/);
+  assert.match(out, /Claude Desktop/);
+  assert.match(out, /Cursor/);
+  assert.match(out, /Windsurf/);
+  assert.match(out, /VS Code/);
+  assert.match(out, /Continue/);
+  assert.match(out, /Zed/);
+  assert.match(out, /TOML/);
+  assert.match(out, /openapimcp/);
+  assert.match(out, /@asubilla\/openapimcp/);
+});
+
+test("examples accepts a spec argument", () => {
+  const out = run(["examples", "https://example.com/openapi.json"]);
+  assert.match(out, /https:\/\/example\.com\/openapi\.json/);
+});
+
+test("output-schema prints coverage for the demo spec", () => {
+  const out = run(["output-schema", fixture]);
+  assert.match(out, /get \/pet\/findByStatus/);
+  assert.match(out, /get \/pet\/\{petId\}/);
+});
+
 test("run matches a tool by task and calls it", () => {
   // Hermetic: dedicated inline fixture with an example response so --mock never touches the network.
   const mocked = path.join(root, "test", ".tmp-run-spec.json");
