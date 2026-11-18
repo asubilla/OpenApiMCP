@@ -46,6 +46,8 @@ openapimcp list --preset github                      # use one directly
 openapimcp bundle ./openapi.json --out bundled.json  # self-contained spec (external $refs inlined)
 openapimcp pin ./openapi.json                        # sha256 of the spec (detect unexpected changes)
 openapimcp compat ./openapi.json                     # which operations are fully/partially/unsupported
+openapimcp serve ./openapi.json --resumable          # SSE event ids + Last-Event-ID replay
+openapimcp serve ./openapi.json --user-rate-limit '{"defaultPerMinute":60,"perUser":{"vip":300}}'   # 429 over-limit
 ```
 
 ## Call APIs safely (agents please read)
@@ -176,6 +178,9 @@ Remote HTTP gateway:
 - `openapimcp dry-run <spec> <tool>` previews the exact request without sending — safe for agents.
 - `openapimcp compat <spec>` reports operations the tool builder can't fully support (rare, usually raw schemas).
 - The HTTP gateway is stateless; `GET /` is a developer portal, `GET /healthz`, `GET /metrics` (Prometheus, includes `openapimcp_gateway_info`).
+- Use `--resumable` on the HTTP gateway if clients need SSE replay across reconnects (Last-Event-ID).
+- Tools whose 2xx response schema resolves cleanly carry `outputSchema` automatically; clients get typed JSON schemas when `--structured-content` is on.
+- Per-user rate limits: `--user-rate-limit '{"defaultPerMinute":60,"perUser":{"vip":120}}'` — over-limit requests get HTTP 429 with `retry-after: 60`. Keyed by `x-user-key` header, then `x-api-key`, then authorization tail.
 - Every tool call emits OpenTelemetry spans + metrics (no-op without a provider).
 
 ## Links

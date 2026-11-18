@@ -528,7 +528,7 @@ See [docs/roadmap.md](docs/roadmap.md) for the per-audience breakdown.
 
 ```bash
 npm install
-npm test   # build + 741 unit tests + end-to-end MCP handshake
+npm test   # build + 795 unit tests + end-to-end MCP handshake
 ```
 
 ## License

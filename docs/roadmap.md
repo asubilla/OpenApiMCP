@@ -86,7 +86,7 @@ And for a shared team gateway:
 ```bash
 openapimcp ./pokeapi.yml --http --port 3000 --gateway-key topsecret
 # GET /healthz      → {"status":"ok","uptimeSeconds":2}
-# GET /metrics      → openapimcp_gateway_info{version="1.13.2"} 1
+# GET /metrics      → openapimcp_gateway_info{version="1.14.0"} 1
 # POST /mcp no-key  → HTTP 401
 # POST /mcp w/ key  → HTTP 200 (SSE, serverInfo in body)
 ```
@@ -95,7 +95,7 @@ openapimcp ./pokeapi.yml --http --port 3000 --gateway-key topsecret
 
 ## How to call each tool
 
-All 33 commands, one line each (as of v1.13.2). `✓` = verified with real runs
+All 39 commands, one line each (as of v1.14.0). `✓` = verified with real runs
 in this repo (see [CHANGELOG](../CHANGELOG.md) and
 [`docs/aws-sigv4.md`](aws-sigv4.md) / [`docs/action-verification.md`](action-verification.md)).
 
@@ -126,14 +126,14 @@ in this repo (see [CHANGELOG](../CHANGELOG.md) and
 | `discover <input>` | best-effort spec discovery from a domain | ✓ (honest "found none" case included) |
 | `eval <spec> <cases>` | measure tool-selection accuracy | ✓ (4/4, 100%) |
 | `memory <file>`    | persistent agent memory (add/search/clear) | ✓ |
-| `workflow <file>`  | multi-step JSON workflow runner | — (format defined, no real example yet) |
+| `workflow <file>`  | multi-step JSON workflow runner (`--spec` to validate) | ✓ (validated against live PokeAPI, 102 tools) |
 | `a2a <spec>`       | emit an A2A agent card | ✓ (card prints; no handshake yet) |
-| `graphql <sdl>`    | GraphQL SDL → MCP tools (preview) | ✓ (from hand SDL) |
-| `postman <collection>`| list operations in a Postman collection | ✓ |
-| `config <file>`    | validate an openapimcp config file | ✓ |
-| `ui <spec>`        | interactive TUI browser | — (interactive; covered by unit tests) |
-| `completions [shell]` | bash/zsh/fish/powershell completion script | ✓ |
-| `help`             | this list | ✓ |
+| `ui <spec>`        | interactive TUI browser | ✓ (renders tool list non-interactively; covered by unit tests) |
+| `completions [shell]` | bash/zsh/fish/powershell completion script | ✓ (bash 24, zsh 21, fish 35, powershell 12) |
+| `--resumable`      | SSE Last-Event-ID resumption on HTTP gateway | ✓ (real session id + SSE event ids, 2026-11-17) |
+| `--user-rate-limit`| per-user rate limits at gateway (429 on over-limit) | ✓ (default 2/min → 3rd req 429; VIP override allowed) |
+| `--ca`/`--proxy`   | corporate CA + outbound proxy with CA trust | ✓ (live against local HTTPS origin with self-signed CA; CONNECT and forward modes) |
+| `gRPC`             | `parseProto` / `grpcTools` — proto3 → MCP tool defs | ✓ (8 tests; parser scope documented in `src/grpc.ts`); no `grpcurl` CLI yet — SDK library only |
 
 ---
 
@@ -150,11 +150,12 @@ in this repo (see [CHANGELOG](../CHANGELOG.md) and
 - `--resources` for spec/ops/servers/security
 
 **Next (not yet built)**
-- `gRPC → MCP` (`.proto` input)
+- `gRPC → MCP` end-to-end: SDK library done (parseProto / grpcTools; `src/grpc.ts`, 8 tests) — still missing a `grpcurl`-style CLI path and live-call verification against a real gRPC service
 - A real **MCP SDK conformance matrix** as a CI job (initialize/tools-list/call/resources/prompts against the current MCP protocol revisions)
-- **Per-user rate limits** at the gateway (today: process-wide rate limit + per-tenant policy)
-- **Streamable HTTP long-lived connections** (SSE resumption tokens / Last-Event-ID) — today: stateless request/response
-- **Structured output schemas** exported alongside `structuredContent` (today: payload only)
+- **Per-user rate limits** — done (`--user-rate-limit`, `src/user-ratelimit.ts`, 18 tests) — remaining: per-tenant (not just per-user) quotas, and quota telemetry in `/metrics` (`openapimcp_user_quota_remaining{user="..."}`)
+- **Streamable HTTP long-lived connections** — done for SSE framing (client receives server→client messages on the GET stream); missing explicit subscription acknowledgment and replay beyond the in-memory ring-buffer cap (default 1000 events)
+- **Structured output schemas** — done (`--structured-content` tools now carry `outputSchema` when their 2xx response schema is clean; `src/spec-output.ts`, 18 tests) — remaining: non-object roots (arrays/primitives) are skipped today; SDK requires object-typed `outputSchema`
+- `docs/roadmap.md` drift: add a CI check that `Verified` column is backed by a test file (`test/verify-roadmap.test.ts`) so claims can't silently rot
 
 ## Roadmap — manual developers
 
@@ -178,15 +179,16 @@ in this repo (see [CHANGELOG](../CHANGELOG.md) and
 - `generate` emitting **audited, pin-first** projects (today: generated output is functional but untested end-to-end in this repo's CI matrix)
 - IDE-side refactors for `openapimcp ui` (currently basic TUI; full keybinding map documented in `docs/`)
 - `generate --target=vscode-extension` (today: standalone node project only)
+- Homebrew/Scoop formula renewal: `sha256` placeholder still pinned to 1.3.0 in the template; formula should reference `dist-tags.latest` instead
 
 ---
 
-## Honest status (today, 2026-11-18)
+## Honest status (today, 2026-11-18, v1.14.0)
 
-- **Tests:** 741/741 unit + e2e MCP handshake (2026-11-18)
+- **Tests:** 795/795 unit + e2e MCP handshake (2026-11-18)
 - **CI:** green on Node 20/22/24 — `main` is always green or the push doesn't land
-- **Docker / npm publish:** green as of v1.13.2 (image pushed to ghcr.io)
-- **npm:** 1.13.1 `latest`; 1.13.2 staged → releases after the usual registry gate
+- **Docker / npm publish:** green through v1.14.0 (image pushed to ghcr.io; v1.14.0 npm staged to the usual gate)
+- **npm:** `latest` is released in lock-step with the GitHub release; staged builds release after the usual registry gate (~30–60 minutes).
 - **Not yet proven by a real user outside this repo:** the PR spec-review Action on a real GitHub repo runner; SigV4 against live AWS; full multi-client IDE handshake matrix; 326 KB PokeAPI snapshot will drift from upstream (refresh commands in [`test/fixtures/corpus/README.md`](../test/fixtures/corpus/README.md))
 
 ## What we will not fake
